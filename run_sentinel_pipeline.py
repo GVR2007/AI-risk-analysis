@@ -1,16 +1,37 @@
 #!/usr/bin/env python3
 """
-SENTINELGRAPH & ABUSE-RING SENTINEL - FINAL FULL PRODUCTION SCRIPT
-==================================================================
+SENTINELGRAPH & ABUSE-RING SENTINEL - FINAL FULL PRODUCTION SCRIPT (CORRECTED)
+================================================================================
 Includes:
-    1. Audited LightGBM pipeline with graph centrality & velocities.
+    1. Audited LightGBM pipeline with LEAK-FREE graph centrality & velocities.
     2. Cost-sensitive threshold tuning with ₹25 review cost & ₹1,500 penalty.
     3. Operational capacity enforcement (Top-12,000 hard truncation).
     4. Test-set inference generating 506,691-row submission.csv.
-    5. Agentic SentinelGraph investigator decision card renderer.
+    5. SentinelGraph forensic decision-card renderer (analyst explanation layer).
+
+CHANGELOG (Failure Recovery 5 -- Centrality Feature Leakage):
+    - add_graph_centrality_features() previously used pandas .transform("nunique")
+      / .transform("count"), which aggregate over the ENTIRE group including
+      future transactions relative to each row -- a look-ahead leak.
+    - Fixed by deriving centrality strictly from the already time-ordered,
+      cumulative unique-count features built in add_structural_ring_features(),
+      and by computing component_size via cumcount() instead of a global count.
+    - Pipeline call order is now enforced: add_structural_ring_features() MUST
+      run before add_graph_centrality_features().
+    - The decision-card demo in main() now attempts a REAL subgraph extraction
+      from actual test data first; only falls back to a clearly labeled
+      synthetic demo card if real data extraction is unavailable.
+
+CHANGELOG (this file, latest pass):
+    - REMOVED the duplicate inline SentinelGraphExplainer class definition.
+      It is now imported from sentinel_explainer.py, which is the single
+      canonical source. Having two copies of this class (one here, one in
+      sentinel_explainer.py) risked the two silently drifting out of sync
+      whenever only one copy got edited.
 """
 
 import os
+import sys
 import warnings
 from collections import defaultdict, deque
 
@@ -18,6 +39,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
+
+from sentinel_explainer import SentinelGraphExplainer
 
 warnings.filterwarnings("ignore")
 
@@ -71,16 +94,6 @@ def prepare_entities(df):
     return df
 
 
-def add_graph_centrality_features(df):
-    df = df.copy()
-    device_card_counts = df.groupby("_device")["_card"].transform("nunique")
-    device_addr_counts = df.groupby("_device")["_address"].transform("nunique")
-    df["device_degree_centrality"] = device_card_counts + device_addr_counts
-    df["card_degree_centrality"] = df.groupby("_card")["_device"].transform("nunique")
-    df["component_size"] = df.groupby(["_device", "_address"])["_card"].transform("count").astype(float)
-    return df
-
-
 def add_structural_ring_features(df):
     df = df.copy().sort_values("TransactionDT").reset_index(drop=True)
     df["device_transaction_count"] = df.groupby("_device", dropna=False).cumcount().astype(float)
@@ -105,6 +118,27 @@ def add_structural_ring_features(df):
     get_uniques("_address", "_device", "address_unique_devices")
     get_uniques("_address", "_card", "address_unique_cards")
     get_uniques("_email", "_card", "email_unique_cards")
+    return df
+
+
+def add_graph_centrality_features(df):
+    df = df.copy()
+
+    required_cols = ["device_unique_cards", "device_unique_addresses", "card_unique_devices"]
+    missing = [c for c in required_cols if c not in df.columns]
+    if missing:
+        raise RuntimeError(
+            f"add_graph_centrality_features() requires columns {missing} to already exist. "
+            f"Call add_structural_ring_features(df) BEFORE add_graph_centrality_features(df)."
+        )
+
+    df["device_degree_centrality"] = df["device_unique_cards"] + df["device_unique_addresses"]
+    df["card_degree_centrality"] = df["card_unique_devices"]
+
+    df["_device_address_card"] = df["_device"] + "_" + df["_address"] + "_" + df["_card"]
+    df["component_size"] = df.groupby("_device_address_card", dropna=False).cumcount().astype(float)
+    df.drop(columns=["_device_address_card"], inplace=True)
+
     return df
 
 
@@ -167,6 +201,15 @@ def add_composite_ring_features(df):
     return df
 
 
+def build_all_features(df):
+    df = prepare_entities(df)
+    df = add_structural_ring_features(df)
+    df = add_graph_centrality_features(df)
+    df = add_multiscale_velocity_features(df)
+    df = add_composite_ring_features(df)
+    return df
+
+
 def make_numeric_matrix(df, features, medians=None):
     selected = [c for c in features if c in df.columns]
     x = df[selected].copy()
@@ -180,107 +223,69 @@ def make_numeric_matrix(df, features, medians=None):
 
 
 # =====================================================================
-# AGENTIC EXPLAINER CLASS (SENTINELGRAPH)
-# =====================================================================
-class SentinelGraphExplainer:
-    def __init__(self, df, predictions, threshold=0.1052):
-        self.df = df.copy()
-        self.df["predicted_prob"] = predictions
-        self.threshold = threshold
-
-    def extract_abuse_ring_subgraph(self, transaction_id):
-        match_rows = self.df[self.df["TransactionID"] == transaction_id]
-        if match_rows.empty:
-            return {"error": "Transaction ID not found in dataset."}
-
-        tx = match_rows.iloc[0]
-        device = tx.get("_device", "__MISSING__")
-        card = tx.get("_card", "__MISSING__")
-        address = tx.get("_address", "__MISSING__")
-
-        cluster_df = self.df[
-            (self.df["_device"] == device) | 
-            (self.df["_card"] == card) | 
-            (self.df["_address"] == address)
-        ]
-
-        prob = float(tx["predicted_prob"])
-        risk_score = round(prob * 100, 1)
-        total_accounts = int(cluster_df["_card"].nunique()) if "_card" in cluster_df.columns else 1
-        total_txs = len(cluster_df)
-        
-        amt_col = "TransactionAmt" if "TransactionAmt" in cluster_df.columns else 0
-        total_exposure_inr = float((cluster_df[amt_col] * USD_TO_INR).sum()) if isinstance(amt_col, str) else 0.0
-
-        shared_devices = int(cluster_df["_device"].nunique()) if "_device" in cluster_df.columns else 1
-        shared_ips = int(cluster_df.get("addr2", pd.Series([1])).nunique())
-        shared_addresses = int(cluster_df["_address"].nunique()) if "_address" in cluster_df.columns else 1
-
-        return {
-            "transaction_id": int(transaction_id),
-            "risk_score": risk_score,
-            "status": "ABUSE RING DETECTED" if prob >= self.threshold else "MONITORED NORMAL",
-            "total_accounts": total_accounts,
-            "total_transactions": total_txs,
-            "exposure_inr": f"₹{total_exposure_inr:,.2f}",
-            "shared_devices": shared_devices,
-            "shared_ips": shared_ips,
-            "shared_addresses": shared_addresses,
-            "cluster_velocity_flag": "High Velocity Syndicate" if total_txs > 3 else "Isolated Anomaly"
-        }
-
-    def render_investigator_card(self, transaction_id):
-        data = self.extract_abuse_ring_subgraph(transaction_id)
-        if "error" in data:
-            return data["error"]
-
-        card = f"""
-        ┌────────────────────────────────────────────────────────┐
-        │   🚨 {data['status']}                              │
-        ├────────────────────────────────────────────────────────┤
-        │ Transaction ID: {data['transaction_id']}                               │
-        │ Risk Score:     {data['risk_score']}/100                               │
-        │ Accounts Bound: {data['total_accounts']}                               │
-        │ Transactions:   {data['total_transactions']}                               │
-        │ Financial Risk: {data['exposure_inr']}                         │
-        ├────────────────────────────────────────────────────────┤
-        │ 🔗 Graph Telemetry Footprint:                          │
-        │    • Shared Devices:   {data['shared_devices']}                              │
-        │    • Shared Subnets:   {data['shared_ips']}                              │
-        │    • Shared Addresses: {data['shared_addresses']}                              │
-        │    • Syndicate Type:   {data['cluster_velocity_flag']}      │
-        └────────────────────────────────────────────────────────┘
-        """
-        return card
-
-
-# =====================================================================
 # MAIN PIPELINE & SUBMISSION RUNNER
 # =====================================================================
+def _try_real_ring_extraction(top_tx_id, top_prob, sub):
+    tx_path = os.path.join(DATA_DIR, "test_transaction.csv")
+    id_path = os.path.join(DATA_DIR, "test_identity.csv")
+
+    if not (os.path.exists(tx_path) and os.path.exists(id_path)):
+        return None
+
+    try:
+        test_tx = pd.read_csv(tx_path)
+        test_id = pd.read_csv(id_path)
+        test_df = test_tx.merge(test_id, on="TransactionID", how="left")
+        test_df = prepare_entities(test_df)
+
+        top_tx_row = test_df[test_df["TransactionID"] == top_tx_id]
+        if top_tx_row.empty:
+            return None
+
+        device = top_tx_row.iloc[0]["_device"]
+        card = top_tx_row.iloc[0]["_card"]
+        address = top_tx_row.iloc[0]["_address"]
+
+        real_cluster = test_df[
+            (test_df["_device"] == device) |
+            (test_df["_card"] == card) |
+            (test_df["_address"] == address)
+        ].copy()
+
+        real_cluster = real_cluster.merge(
+            sub[["TransactionID", "isFraud"]], on="TransactionID", how="left"
+        )
+        real_cluster["isFraud"] = real_cluster["isFraud"].fillna(0.0)
+        probs_real = real_cluster["isFraud"].tolist()
+
+        return real_cluster, probs_real
+    except Exception as e:
+        print(f"[!] Real ring extraction failed with error: {e}")
+        return None
+
+
 def main():
     print("=" * 65)
-    print("   SENTINELGRAPH & ABUSE-RING SENTINEL (TRACK 2)")
+    print("   SENTINELGRAPH & ABUSE-RING SENTINEL (PRODUCTION PIPELINE)")
     print("=" * 65)
 
+    if not os.path.exists(MODEL_FILE):
+        print(f"[*] Model file '{MODEL_FILE}' not found. Training model via pipeline...")
+        import ieee_pipeline_chatgpt_13
+        ieee_pipeline_chatgpt_13.run_pipeline()
+
     if not os.path.exists(SUBMISSION_FILE):
-        print("[*] Generating submission.csv from test set...")
-        # (This executes your test inference generator automatically if submission is missing)
-        test_trans = pd.read_csv(os.path.join(DATA_DIR, "test_transaction.csv"), low_memory=True)
-        test_ident_path = os.path.join(DATA_DIR, "test_identity.csv")
-        if os.path.exists(test_ident_path):
-            test_ident = pd.read_csv(test_ident_path, low_memory=True)
-            test_df = test_trans.merge(test_ident, on="TransactionID", how="left", suffixes=("", "_identity"))
-        else:
-            test_df = test_trans
-        
-        # Load model & predict
-        if os.path.exists(MODEL_FILE):
-            model = joblib.load(MODEL_FILE)
-            # Minimal feature baseline prediction for demonstration if needed
-            print("[✓] Model loaded successfully.")
-    
+        print(f"[*] Submission file '{SUBMISSION_FILE}' not found. Generating test set predictions...")
+        import iterations.generate_submission as gen_sub
+        gen_sub.main()
+
+    if os.path.exists(SUBMISSION_FILE):
+        print("\n[*] Auditing submission file integrity...")
+        import verify_submission
+        verify_submission.audit_submission()
+
     sub = pd.read_csv(SUBMISSION_FILE)
-    print(f"[✓] Loaded submission file with {len(sub):,} audited predictions.")
+    print(f"\n[✓] Loaded submission file with {len(sub):,} audited predictions.")
 
     top_row = sub.sort_values("isFraud", ascending=False).iloc[0]
     top_tx_id = int(top_row["TransactionID"])
@@ -289,23 +294,33 @@ def main():
     print(f"[✓] Top Flagged Risk: Transaction ID {top_tx_id} (Score: {top_prob:.4f})")
     print("[✓] Extracting subgraph relationships via SentinelGraph...")
 
-    test_df_stub = pd.DataFrame({
-        "TransactionID": [top_tx_id, top_tx_id + 1, top_tx_id + 2, top_tx_id + 3],
-        "TransactionAmt": [450.0, 1200.0, 89.0, 310.0],
-        "card1": [9876, 9876, 9876, 5432],
-        "addr1": [123, 123, 456, 123],
-        "P_emaildomain": ["fraud-syndicate.com", "fraud-syndicate.com", "tempmail.org", "gmail.com"]
-    })
+    real_result = _try_real_ring_extraction(top_tx_id, top_prob, sub)
 
-    test_df_stub["_device"] = "Nexus_Device_X9"
-    test_df_stub["_card"] = test_df_stub["card1"].astype(str)
-    test_df_stub["_address"] = test_df_stub["addr1"].astype(str)
+    if real_result is not None:
+        real_cluster, probs_real = real_result
+        explainer = SentinelGraphExplainer(real_cluster, probs_real, threshold=0.105172)
+        card_output = explainer.render_investigator_card(top_tx_id, demo_mode=False)
+        print(card_output)
+    else:
+        print("[!] Raw test data unavailable for real extraction -- using labeled DEMO MODE fallback.")
 
-    probs_stub = [top_prob, 0.9412, 0.8821, 0.0520]
+        test_df_stub = pd.DataFrame({
+            "TransactionID": [top_tx_id, top_tx_id + 1, top_tx_id + 2, top_tx_id + 3],
+            "TransactionAmt": [450.0, 1200.0, 89.0, 310.0],
+            "card1": [9876, 9876, 9876, 5432],
+            "addr1": [123, 123, 456, 123],
+            "P_emaildomain": ["example-domain.com", "example-domain.com", "tempmail.org", "gmail.com"],
+        })
 
-    explainer = SentinelGraphExplainer(test_df_stub, probs_stub, threshold=0.1052)
-    card_output = explainer.render_investigator_card(top_tx_id)
-    print(card_output)
+        test_df_stub["_device"] = "Demo_Device_Stub"
+        test_df_stub["_card"] = test_df_stub["card1"].astype(str)
+        test_df_stub["_address"] = test_df_stub["addr1"].astype(str)
+
+        probs_stub = [top_prob, 0.9412, 0.8821, 0.0520]
+
+        explainer = SentinelGraphExplainer(test_df_stub, probs_stub, threshold=0.105172)
+        card_output = explainer.render_investigator_card(top_tx_id, demo_mode=True)
+        print(card_output)
 
     print("=" * 65)
     print("   STATUS: READY FOR SUBMISSION & DEMO")

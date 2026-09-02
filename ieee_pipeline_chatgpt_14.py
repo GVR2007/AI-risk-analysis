@@ -392,14 +392,64 @@ def audit_capacity(res_h):
     print(f"Total Alerts Flagged: {alerts:,}")
     print(f"Operational Cap Limit: {MAX_MANUAL_REVIEWS_CAP:,}")
     if alerts > MAX_MANUAL_REVIEWS_CAP:
-        print(f"STATUS: CAPACITY CAPPED - Exceeded by {alerts - MAX_MANUAL_REVIEWS_CAP:,} alerts (Penalized).")
+        # This branch should now be unreachable, since evaluate() hard-truncates
+        # to MAX_MANUAL_REVIEWS_CAP before reporting. Kept as a defensive check.
+        print(f"STATUS: FAIL - Reported alerts ({alerts:,}) exceed the hard cap. "
+              f"This should not happen -- check apply_hard_capacity_truncation().")
+    elif alerts == MAX_MANUAL_REVIEWS_CAP:
+        print("STATUS: PASSED - Hard-truncated to exactly the manual review capacity budget.")
     else:
-        print("STATUS: PASSED - Operating strictly within manual review capacity budget.")
+        print("STATUS: PASSED - Operating within manual review capacity budget.")
+
+
+def apply_hard_capacity_truncation(probability, cap=MAX_MANUAL_REVIEWS_CAP):
+    """
+    Ranks all transactions by predicted probability and keeps only the top
+    `cap` as alerts, regardless of threshold. This is a REAL hard truncation
+    (not a soft cost penalty) -- it guarantees the number of alerts never
+    exceeds the SOC's actual manual review capacity, which is the constraint
+    the whole capacity-audit exists to enforce.
+    """
+    n = len(probability)
+    if n <= cap:
+        return np.ones(n, dtype=int)
+    # Rank descending by probability; keep exactly the top `cap` indices as alerts
+    order = np.argsort(-probability, kind="mergesort")
+    keep_idx = order[:cap]
+    y_pred = np.zeros(n, dtype=int)
+    y_pred[keep_idx] = 1
+    return y_pred
 
 
 def evaluate(model, X_test, y_test, amount_test, threshold, name, save_artifacts_prefix=None):
     probability = model.predict_proba(X_test)[:, 1]
+
+    # First compute the threshold-based prediction (for reference / audit_capacity logging)
     cost_res = calculate_cost_with_capacity_constraint(y_test, probability, amount_test, threshold)
+
+    # Then HARD-ENFORCE the manual review capacity: rank by probability and
+    # truncate to exactly MAX_MANUAL_REVIEWS_CAP alerts. All reported metrics
+    # below use this capacity-compliant prediction set, not the raw
+    # threshold-based one, so the headline numbers can never silently exceed
+    # the stated operational constraint.
+    y_pred_capped = apply_hard_capacity_truncation(probability, MAX_MANUAL_REVIEWS_CAP)
+
+    y_true_arr = np.asarray(y_test, dtype=int)
+    amount_inr = np.asarray(amount_test, dtype=float) * USD_TO_INR
+
+    fp_mask = (y_true_arr == 0) & (y_pred_capped == 1)
+    fn_mask = (y_true_arr == 1) & (y_pred_capped == 0)
+    fp_capped, fn_capped = int(fp_mask.sum()), int(fn_mask.sum())
+    fp_cost_capped = fp_capped * FALSE_POSITIVE_REVIEW_COST
+    fn_exposure_capped = float(amount_inr[fn_mask].sum()) + (fn_capped * CHARGEBACK_PENALTY_FEE)
+    total_cost_capped = fp_cost_capped + fn_exposure_capped  # no capacity penalty term needed; cap is hard-enforced
+
+    cost_res = {
+        "fp": fp_capped, "fn": fn_capped, "fp_cost": fp_cost_capped,
+        "fn_exposure": fn_exposure_capped, "total_cost": total_cost_capped,
+        "adjusted_preds": y_pred_capped, "adjusted_probs": probability,
+        "total_alerts": int(y_pred_capped.sum()),
+    }
     adj_pred = cost_res["adjusted_preds"]
 
     precision = precision_score(y_test, adj_pred, zero_division=0)

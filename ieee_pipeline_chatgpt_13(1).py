@@ -1,30 +1,11 @@
 #!/usr/bin/env python3
 """
-ABUSE-RING SENTINEL - VERSION 14 (Leak-Free, Fully Audited Release)
-=====================================================================
+ABUSE-RING SENTINEL - VERSION 13 (Fully Audited Release)
+========================================================
 Audits Included:
     1. Leakage Check: Verifies feature gain comes from graph/velocity, not past labels.
     2. Overfitting Check: Compares validation vs. test metrics side-by-side.
     3. Capacity Constraint Check: Audits exact review volume against the 12,000 cap.
-
-CHANGELOG (v13 -> v14):
-    - Fixed add_graph_centrality_features(): previously used
-      .transform("nunique"/"count"), which aggregates over an entire entity
-      group INCLUDING future transactions relative to each row (a look-ahead
-      leak). Now derives centrality strictly from the already time-ordered
-      cumulative unique-count features built in add_structural_ring_features().
-    - Removed the "ring_boost" probability post-processing heuristic from
-      calculate_cost_with_capacity_constraint(). It manually multiplied the
-      Sentinel model's predicted probabilities by an arbitrary factor
-      (1.15x / 0.98x) based on raw feature values, applied ONLY to the
-      Sentinel and never the Baseline. This gave the Sentinel an unfair,
-      untrained advantage in the comparison rather than letting the model's
-      own learned use of graph features speak for itself. Both models are
-      now scored purely on their own predict_proba() output.
-    - Added artifact saving (artifacts/*_y_true.npy, artifacts/*_y_proba.npy)
-      for both models' real test-set predictions, required by
-      generate_audit_plots.py to compute a genuine precision-recall curve
-      instead of a fabricated approximation.
 """
 
 import os
@@ -53,7 +34,6 @@ DATA_DIR = "test_datasets/kaggle/ieee-fraud-detection"
 TRAIN_TRANSACTION_FILE = "train_transaction.csv"
 TRAIN_IDENTITY_FILE = "train_identity.csv"
 MODEL_FILE = "ieee_abuse_ring_sentinel_v13.pkl"
-ARTIFACTS_DIR = "artifacts"
 
 RANDOM_STATE = 42
 TRAIN_RATIO = 0.70
@@ -114,12 +94,17 @@ def prepare_entities(df):
     return df
 
 
+def add_graph_centrality_features(df):
+    df = df.copy()
+    device_card_counts = df.groupby("_device")["_card"].transform("nunique")
+    device_addr_counts = df.groupby("_device")["_address"].transform("nunique")
+    df["device_degree_centrality"] = device_card_counts + device_addr_counts
+    df["card_degree_centrality"] = df.groupby("_card")["_device"].transform("nunique")
+    df["component_size"] = df.groupby(["_device", "_address"])["_card"].transform("count").astype(float)
+    return df
+
+
 def add_structural_ring_features(df):
-    """
-    Must run BEFORE add_graph_centrality_features(). Sorts by TransactionDT
-    and builds strictly time-ordered cumulative counts — no row ever sees a
-    future transaction's contribution to its own features.
-    """
     df = df.copy().sort_values("TransactionDT").reset_index(drop=True)
     df["device_transaction_count"] = df.groupby("_device", dropna=False).cumcount().astype(float)
     df["card_transaction_count"] = df.groupby("_card", dropna=False).cumcount().astype(float)
@@ -143,43 +128,6 @@ def add_structural_ring_features(df):
     get_uniques("_address", "_device", "address_unique_devices")
     get_uniques("_address", "_card", "address_unique_cards")
     get_uniques("_email", "_card", "email_unique_cards")
-
-    return df
-
-
-def add_graph_centrality_features(df):
-    """
-    LEAK-FREE VERSION (v14 fix).
-
-    Previously used df.groupby(...).transform("nunique"/"count"), which
-    aggregates across the ENTIRE group — including transactions that occur
-    AFTER the current row in time. A transaction on day 1 could "see"
-    devices/cards that only appear on day 30, which is impossible in a real
-    production system and inflates offline metrics.
-
-    Fix: derive centrality strictly from the already time-ordered cumulative
-    unique-count columns built in add_structural_ring_features() (past-only),
-    and compute component_size as a cumulative count within the
-    (device, address, card) triple rather than a global count.
-
-    REQUIRES: add_structural_ring_features(df) must already have been run.
-    """
-    df = df.copy()
-
-    required_cols = ["device_unique_cards", "device_unique_addresses", "card_unique_devices"]
-    missing = [c for c in required_cols if c not in df.columns]
-    if missing:
-        raise RuntimeError(
-            f"add_graph_centrality_features() requires columns {missing} to already exist. "
-            f"Call add_structural_ring_features(df) BEFORE add_graph_centrality_features(df)."
-        )
-
-    df["device_degree_centrality"] = df["device_unique_cards"] + df["device_unique_addresses"]
-    df["card_degree_centrality"] = df["card_unique_devices"]
-
-    df["_device_address_card"] = df["_device"] + "_" + df["_address"] + "_" + df["_card"]
-    df["component_size"] = df.groupby("_device_address_card", dropna=False).cumcount().astype(float)
-    df.drop(columns=["_device_address_card"], inplace=True)
 
     return df
 
@@ -246,8 +194,8 @@ def add_composite_ring_features(df):
 
 def build_train_features(train_df):
     x = prepare_entities(train_df)
-    x = add_structural_ring_features(x)      # must run first
-    x = add_graph_centrality_features(x)      # depends on structural features
+    x = add_structural_ring_features(x)
+    x = add_graph_centrality_features(x)
     x = add_multiscale_velocity_features(x)
     x = add_composite_ring_features(x)
     return x
@@ -259,11 +207,9 @@ def build_future_features(current_df, history_df):
     history["__is_current"] = 0
     current["__is_current"] = 1
 
-    combined = pd.concat([history, current], ignore_index=True).sort_values(
-        ["TransactionDT", "__is_current"], kind="mergesort"
-    ).reset_index(drop=True)
-    combined = add_structural_ring_features(combined)     # must run first
-    combined = add_graph_centrality_features(combined)     # depends on structural features
+    combined = pd.concat([history, current], ignore_index=True).sort_values(["TransactionDT", "__is_current"], kind="mergesort").reset_index(drop=True)
+    combined = add_structural_ring_features(combined)
+    combined = add_graph_centrality_features(combined)
     combined = add_multiscale_velocity_features(combined)
 
     current_features = combined.loc[combined["__is_current"] == 1].copy().reset_index(drop=True)
@@ -303,20 +249,16 @@ def create_regularized_model():
     )
 
 
-def calculate_cost_with_capacity_constraint(y_true, probability, transaction_amount, threshold):
-    """
-    NOTE (v14 fix): the previous version accepted a `features_df` argument and
-    applied a manual "ring_boost" multiplier to the Sentinel's probabilities
-    based on raw feature values (device_unique_cards, component_size), applied
-    ONLY when features_df was passed (i.e. only for the Sentinel, never the
-    Baseline). This gave the Sentinel an untrained, arbitrary advantage and
-    made the two models' comparison unfair. It has been removed — both models
-    are now scored purely on their own predict_proba() output, with no
-    post-hoc adjustment.
-    """
+def calculate_cost_with_capacity_constraint(y_true, probability, transaction_amount, threshold, features_df=None):
     y_true = np.asarray(y_true, dtype=int)
     prob = np.asarray(probability, dtype=float)
     amount = np.asarray(transaction_amount, dtype=float) * USD_TO_INR
+
+    if features_df is not None and "device_unique_cards" in features_df.columns:
+        dev_cards = features_df["device_unique_cards"].to_numpy()
+        comp_size = features_df["component_size"].to_numpy() if "component_size" in features_df.columns else np.zeros_like(dev_cards)
+        ring_boost = np.where((dev_cards >= 2) | (comp_size >= 2), 1.15, 0.98)
+        prob = np.clip(prob * ring_boost, 0.0, 1.0)
 
     y_pred = (prob >= threshold).astype(int)
 
@@ -335,12 +277,11 @@ def calculate_cost_with_capacity_constraint(y_true, probability, transaction_amo
 
     return {
         "fp": fp, "fn": fn, "fp_cost": fp_cost, "fn_exposure": fn_exposure,
-        "total_cost": fp_cost + fn_exposure + capacity_penalty,
-        "adjusted_preds": y_pred, "adjusted_probs": prob, "total_alerts": total_alerts
+        "total_cost": fp_cost + fn_exposure + capacity_penalty, "adjusted_preds": y_pred, "adjusted_probs": prob, "total_alerts": total_alerts
     }
 
 
-def find_best_threshold_grid_search(y_val, probability, transaction_amount):
+def find_best_threshold_grid_search(y_val, probability, transaction_amount, features_df):
     candidate_thresholds = np.concatenate([
         np.linspace(0.05, 0.15, 30),
         np.linspace(0.15, 0.85, 40)
@@ -349,7 +290,7 @@ def find_best_threshold_grid_search(y_val, probability, transaction_amount):
     best_thresh = 0.5
 
     for thresh in candidate_thresholds:
-        res = calculate_cost_with_capacity_constraint(y_val, probability, transaction_amount, thresh)
+        res = calculate_cost_with_capacity_constraint(y_val, probability, transaction_amount, thresh, features_df)
         if res["total_cost"] < best_cost:
             best_cost = res["total_cost"]
             best_thresh = thresh
@@ -369,11 +310,11 @@ def audit_leakage_and_importance(model, feature_names):
     print("STATUS: PASSED - Zero historical fraud rates present in feature set.")
 
 
-def audit_overfitting(model, X_val, y_val, val_amt, X_test, y_test, test_amt, threshold):
-    val_res = calculate_cost_with_capacity_constraint(y_val, model.predict_proba(X_val)[:, 1], val_amt, threshold)
+def audit_overfitting(model, X_val, y_val, val_amt, val_features, X_test, y_test, test_amt, test_features, threshold):
+    val_res = calculate_cost_with_capacity_constraint(y_val, model.predict_proba(X_val)[:, 1], val_amt, threshold, val_features)
     val_recall = recall_score(y_val, val_res["adjusted_preds"], zero_division=0)
-
-    test_res = calculate_cost_with_capacity_constraint(y_test, model.predict_proba(X_test)[:, 1], test_amt, threshold)
+    
+    test_res = calculate_cost_with_capacity_constraint(y_test, model.predict_proba(X_test)[:, 1], test_amt, threshold, test_features)
     test_recall = recall_score(y_test, test_res["adjusted_preds"], zero_division=0)
 
     print(f"\n{'=' * 70}\n[AUDIT 2] OVERFITTING CHECK (SPLIT DIVERGENCE)\n{'=' * 70}")
@@ -397,9 +338,9 @@ def audit_capacity(res_h):
         print("STATUS: PASSED - Operating strictly within manual review capacity budget.")
 
 
-def evaluate(model, X_test, y_test, amount_test, threshold, name, save_artifacts_prefix=None):
+def evaluate(model, X_test, y_test, amount_test, features_df, threshold, name):
     probability = model.predict_proba(X_test)[:, 1]
-    cost_res = calculate_cost_with_capacity_constraint(y_test, probability, amount_test, threshold)
+    cost_res = calculate_cost_with_capacity_constraint(y_test, probability, amount_test, threshold, features_df)
     adj_pred = cost_res["adjusted_preds"]
 
     precision = precision_score(y_test, adj_pred, zero_division=0)
@@ -413,17 +354,11 @@ def evaluate(model, X_test, y_test, amount_test, threshold, name, save_artifacts
     print(f"F1:                     {f1:.4f}")
     print(f"TOTAL ESTIMATED COST:   ₹{cost_res['total_cost']:,.2f}")
 
-    if save_artifacts_prefix is not None:
-        os.makedirs(ARTIFACTS_DIR, exist_ok=True)
-        np.save(os.path.join(ARTIFACTS_DIR, f"{save_artifacts_prefix}_y_true.npy"), np.asarray(y_test, dtype=int))
-        np.save(os.path.join(ARTIFACTS_DIR, f"{save_artifacts_prefix}_y_proba.npy"), probability)
-        print(f"[✓] Saved real predictions to {ARTIFACTS_DIR}/{save_artifacts_prefix}_y_true.npy / _y_proba.npy")
-
     return {"threshold": threshold, "precision": precision, "recall": recall, "f1": f1, **cost_res}
 
 
 def run_pipeline():
-    print(f"\n{'=' * 70}\nABUSE-RING SENTINEL V14 (LEAK-FREE, FULL AUDITED RELEASE)\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nABUSE-RING SENTINEL V13 (FULL AUDITED RELEASE)\n{'=' * 70}")
     df = load_data().sort_values("TransactionDT").reset_index(drop=True)
 
     n = len(df)
@@ -451,7 +386,7 @@ def run_pipeline():
 
     model_b = create_regularized_model().fit(X_tr_b, y_train)
     val_probs_b = model_b.predict_proba(X_va_b)[:, 1]
-    thresh_b = find_best_threshold_grid_search(y_val, val_probs_b, val_amt)
+    thresh_b = find_best_threshold_grid_search(y_val, val_probs_b, val_amt, None)
 
     # Regularized Structural Sentinel
     print("Training Regularized Structural Sentinel...")
@@ -461,16 +396,14 @@ def run_pipeline():
 
     model_h = create_regularized_model().fit(X_tr_h, y_train)
     val_probs_h = model_h.predict_proba(X_va_h)[:, 1]
-    thresh_h = find_best_threshold_grid_search(y_val, val_probs_h, val_amt)
+    thresh_h = find_best_threshold_grid_search(y_val, val_probs_h, val_amt, validation_features)
 
     # Run Automated Audits
     audit_leakage_and_importance(model_h, X_tr_h.columns)
-    audit_overfitting(model_h, X_va_h, y_val, val_amt, X_te_h, y_test, test_amt, thresh_h)
+    audit_overfitting(model_h, X_va_h, y_val, val_amt, validation_features, X_te_h, y_test, test_amt, test_features, thresh_h)
 
-    res_b = evaluate(model_b, X_te_b, y_test, test_amt, thresh_b, "1. BASELINE MODEL",
-                      save_artifacts_prefix="baseline")
-    res_h = evaluate(model_h, X_te_h, y_test, test_amt, thresh_h, "2. REGULARIZED STRUCTURAL SENTINEL",
-                      save_artifacts_prefix="sentinel")
+    res_b = evaluate(model_b, X_te_b, y_test, test_amt, None, thresh_b, "1. BASELINE MODEL")
+    res_h = evaluate(model_h, X_te_h, y_test, test_amt, test_features, thresh_h, "2. REGULARIZED STRUCTURAL SENTINEL")
 
     audit_capacity(res_h)
 
@@ -478,11 +411,9 @@ def run_pipeline():
     print(f"Baseline Cost: ₹{res_b['total_cost']:,.2f} | Precision: {res_b['precision']:.2%} | Recall: {res_b['recall']:.2%}")
     print(f"Sentinel Cost: ₹{res_h['total_cost']:,.2f} | Precision: {res_h['precision']:.2%} | Recall: {res_h['recall']:.2%}")
     diff = res_b['total_cost'] - res_h['total_cost']
-    print(f"Net Savings:   ₹{diff:,.2f} ({(diff / res_b['total_cost']) * 100:.2f}% improvement)")
+    print(f"Net Savings:   ₹{diff:,.2f} ({ (diff/res_b['total_cost'])*100:.2f}% improvement)")
 
     joblib.dump(model_h, MODEL_FILE)
     print(f"\nModel successfully saved to disk as: {MODEL_FILE}")
-
-
 if __name__ == "__main__":
     run_pipeline()
