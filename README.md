@@ -1,182 +1,187 @@
-# Abuse-Ring Sentinel: Real-Time Graph & Multiscale Velocity AI Risk Engine
+# Abuse-Ring Sentinel
 
-[![Python](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/)
-[![LightGBM](https://img.shields.io/badge/Model-LightGBM-green.svg)](https://lightgbm.readthedocs.io/)
+A cost-sensitive, capacity-constrained fraud detector for the IEEE-CIS Fraud Detection dataset. Optimizes net merchant loss (not accuracy) under a hard-enforced manual-review capacity constraint. Two models were built and compared: a **Baseline LightGBM (SHIPPED)** and a **Structural Sentinel** with graph/entity features (tested, not shipped — see [Model Selection & Negative Results](#model-selection--negative-results) below).
+
 [![License](https://img.shields.io/badge/License-MIT-brightgreen.svg)](LICENSE)
-[![Domain](https://img.shields.io/badge/Domain-AI%20Risk%20%26%20Fraud%20Detection-orange.svg)]()
-
-> **Abuse-Ring Sentinel** is an enterprise-grade AI risk analysis engine engineered to detect coordinated fraud, multi-entity abuse rings, and high-velocity carding attacks in real-time transaction streams. Operating with a cost-sensitive and capacity-constrained optimization engine, it reduces overall financial exposure from fraud chargebacks while operating strictly within manual review capacity budgets.
-
-> ⚠️ **Note on metrics below**: All numbers in this README were re-audited after fixing a temporal look-ahead leak in the graph centrality features (see [Failure Recovery Log](docs/FAILURE_LOG.md), item 5). If you are re-running the pipeline yourself, expect the exact figures to shift slightly from historical drafts of this repo as a result of that fix — this is expected and is the correct, leak-free result.
 
 ---
 
-## 📌 Problem Statement
+## Problem Statement
 
-In modern digital payment platforms and payment gateways (such as Razorpay and BFSI infrastructure), financial fraud has evolved from isolated bad actors to organized, highly sophisticated **fraud syndicates**. These syndicates leverage shared device infrastructure, disposable email domains, rotating billing addresses, and virtual credit card numbers to execute rapid automated carding attacks and multi-entity abuse rings.
+- **Severe class imbalance.** The 88,581-row test split carries a 3.48% fraud base rate. Any classifier that "achieves 96% accuracy" is doing so by predicting the majority class — accuracy is the wrong metric.
+- **Metric–cost misalignment.** Precision and recall don't measure what a payments team actually pays. A false positive costs an analyst review (₹25). A false negative costs the transaction amount **plus** a ₹1,500 chargeback penalty. Different errors cost different money; the training and evaluation objective must be net rupees, not F1.
+- **Finite review capacity.** The manual-review team can process at most **12,000 alerts** across the test window. This is enforced as a hard truncation on the alert queue — the top 12,000 by probability are reviewed, everything below is auto-approved. The 12,000 cap is never exceeded, regardless of what the model wants to fire.
 
-### Key Operational Challenges:
-1. **Entity Dissimulation & Distributed Abuse Rings**: Traditional transaction-level machine learning models evaluate each transaction independently as an isolated event. They fail to capture shared hardware fingerprints, IP subnets, and cross-entity binding across multiple accounts.
-2. **Target Data Leakage in Feature Engineering**: Naïve graph or historical aggregation approaches often introduce future target label leakage (using past fraud rates directly, or global `.transform()` aggregates that see future rows), causing models to fail when deployed on real-time, out-of-time transaction streams.
-3. **Misalignment of Standard ML Metrics with Financial Economics**: Optimizing for classic metrics like ROC-AUC or F1-Score ignores financial realities. In production, a False Positive (FP) incurs manual analyst review labor cost (~₹25.00 / $0.30), whereas a False Negative (FN) incurs full financial transaction loss plus chargeback penalty fees (~₹1,500.00 / $18.00).
-4. **Finite Manual Review Capacity**: Security Operations Center (SOC) investigation teams operate under a hard ceiling on manual review throughput (e.g., maximum 12,000 manual reviews per period). Flagging excessive alerts creates backlogs and leads to unreviewed fraud.
+## FX & Proxy-Dataset Caveat
 
-### FX Conversion & Proxy Benchmark Rationale
-- **Currency Normalization**: Transaction amounts are converted into INR using a fixed FX rate ($1\text{ USD} = 83.00\text{ INR}$) to evaluate financial exposure in Indian Rupees ($\text{₹}$).
-- **Domain Proxy Rationale**: The IEEE-CIS Fraud Detection dataset serves as a standardized global benchmark representing payment gateway transaction topologies. Applying Indian BFSI economics ($\text{₹}25.00$ FP cost and $\text{₹}1,500.00$ chargeback fee) allows realistic evaluation of operational cost savings while maintaining benchmark reproducibility. Absolute monetary totals should be read as relative economic projections rather than localized ledger forecasts, since basket sizes, UPI-specific routing, and local fraud vectors differ from the US-centric source dataset.
-
-**Abuse-Ring Sentinel** solves these challenges by combining a dynamic **Entity Link Graph & Centrality Engine** (leak-free, time-ordered), **Multiscale Temporal Velocity Tracking**, an **Automated 3-Point Audit Suite**, and a **SentinelGraph Forensic Decision Explainer**.
+`TransactionAmt` is in USD. Every rupee figure in this README uses a fixed conversion of **1 USD = ₹83.00**. IEEE-CIS is a US-centric public dataset used here as a proxy for Indian BFSI fraud patterns; the absolute rupee costs are relative economic projections, not localized forecasts. What is meaningful is the **cost delta between models on the same test set**, not the absolute magnitude.
 
 ---
 
-## 🚀 How to Run
+## How to Run
 
-### 1. Prerequisites & Environment Setup
-
-Clone the repository and set up a Virtual Environment:
+### a. Setup
 
 ```bash
-git clone https://github.com/GVR2007/AI-risk-analysis.git
-cd AI-risk-analysis
-python3 -m venv venv
+git clone <this-repo>
+cd Razor_pay
+python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Dataset Setup
-Ensure the IEEE-CIS Fraud Detection dataset files are placed in the target directory:
-Download the IEEE-CIS Fraud Detection dataset from Kaggle: 👉 https://www.kaggle.com/c/ieee-fraud-detection/data
-```
-test_datasets/kaggle/ieee-fraud-detection/
-├── train_transaction.csv
-├── train_identity.csv
-├── test_transaction.csv
-├── test_identity.csv
-└── sample_submission.csv
+### b. Dataset
+
+Download the IEEE-CIS Fraud Detection dataset from https://www.kaggle.com/c/ieee-fraud-detection/data (a free Kaggle account is required). CLI alternative:
+
+```bash
+kaggle competitions download -c ieee-fraud-detection
 ```
 
-### 3. Execution Options
+Unzip and place the following files in `test_datasets/kaggle/ieee-fraud-detection/`:
 
-#### Option A: Full Training, Auditing & Evaluation Pipeline
-Run the fully audited Sentinel training pipeline to compute graph/velocity features (via the leak-free `build_all_features()` entry point), train models, run automated audits, and evaluate cost savings. This step also saves the real predicted probabilities (`artifacts/*_y_true.npy`, `artifacts/*_y_proba.npy`) needed for plot generation in Option E.
+- `train_transaction.csv`
+- `train_identity.csv`
+- `test_transaction.csv`
+- `test_identity.csv`
+- `sample_submission.csv`
+
+These files total ~700 MB. They are gitignored and must never be committed.
+
+### c. Train, audit, and score
 
 ```bash
 python ieee_pipeline_chatgpt_15.py
 ```
-*or using the workspace environment:*
-```bash
-./venv/bin/python3 ieee_pipeline_chatgpt_15.py
-```
 
-#### Option B: Production Sentinel Runner & Analyst Decision-Card Renderer
-Run the primary production entry point to process predictions, load audited models, and render forensic decision cards for high-risk transactions:
+This is the canonical training pipeline. It builds features via `build_train_features()` for the training split and `build_future_features()` for the validation and test splits — the latter uses strictly past-only history so no row ever sees its own future, preventing look-ahead leakage. It then trains both the Baseline and the Structural Sentinel, runs all three audits (leakage, overfitting, capacity), hard-truncates the alert queue to the 12,000 cap, and saves the real per-row prediction arrays into `artifacts/*.npy` for downstream plotting.
 
-```bash
-python run_sentinel_pipeline.py
-```
-*or using the workspace environment:*
-```bash
-./venv/bin/python3 run_sentinel_pipeline.py
-```
-*(Note: The SentinelGraph Decision Explainer is a template-driven explanation layer over existing model outputs — it renders human-readable rationale for analyst review and takes no autonomous action. This runner first attempts a REAL entity-subgraph extraction from raw test data; it only falls back to a clearly labeled `[SYNTHETIC DEMO DATA]` card if raw test files are unavailable.)*
-
-#### Option C: Memory-Optimized Test Submission Generator
-Generate test set predictions (`submission.csv` with 506,691 rows) using streaming chunked processing designed to prevent Out-Of-Memory (OOM) errors:
-
-```bash
-python iterations/generate_submission.py
-```
-
-#### Option D: Submission Integrity & Sanity Auditor
-Validate schema compliance, missing values, probability bounds, and fraud rate calibration for `submission.csv`:
-
-```bash
-python verify_submission.py
-```
-
-#### Option E: Regenerate Audit Visualizations (Confusion Matrix & Real PR Curve)
-Regenerate `docs/results/confusion_matrix.png` and `docs/results/pr_curve.png`. The precision-recall curve is computed via `sklearn.metrics.precision_recall_curve` on real saved model predictions (`artifacts/*_y_true.npy`, `artifacts/*_y_proba.npy` from Option A) — it is **not** a fabricated parametric approximation. The script will refuse to run and raise a clear error if these real prediction arrays are missing, rather than silently substituting an approximation.
+### d. Generate result images
 
 ```bash
 python generate_audit_plots.py
 ```
 
----
+Regenerates `docs/results/confusion_matrix_baseline.png`, `docs/results/confusion_matrix_sentinel.png`, and `docs/results/pr_curve.png`. All three are computed live from the real saved prediction arrays — nothing is hardcoded, and the PR curve uses `sklearn.metrics.precision_recall_curve` on real predictions rather than a parametric approximation.
 
-## 📊 Final Results & Performance Benchmark
+### e. Build and verify the submission
 
-Below is the quantitative evaluation comparing the **Baseline LightGBM Model** against the **Regularized Structural Sentinel (v13)** on out-of-time test transaction data under financial cost constraints:
+```bash
+python iterations/generate_submission.py
+python verify_submission.py
+```
 
-| Metric / Metric Category | Baseline Model | Regularized Structural Sentinel (v13) | Performance Delta / Status |
-| :--- | :---: | :---: | :---: |
-| **Optimal Risk Threshold ($T^*$)** | `0.091379` | **`0.105172`** | Optimized via Cost Grid Search |
-| **Audited Precision** | `10.18%` | **`16.49%`** | **+6.31pp (+62.0% Relative Gain)** |
-| **Recall** | `68.57%` | **`64.13%`** | Capacity-Optimized Balance |
-| **F1-Score** | `0.1773` | **`0.2623`** | **+47.9% F1 Improvement** |
-| **Total Estimated Financial Cost** | `₹16,101,897.13` | **`₹15,666,640.12`** | **Cost Reduction** |
-| **Net Financial Savings** | Baseline | **`₹435,257.01`** | **2.70% Direct Exposure Saved** |
-| **Audit Check 1: Target Leakage** | N/A | **`0% Leakage`** | `PASSED` |
-| **Audit Check 2: Overfitting Divergence** | N/A | **`0.0151` ($\le 0.08$)** | `PASSED` |
-| **Audit Check 3: Capacity Constraint** | Capped | **`12,000 Cap Enforced`** | `PASSED (Audited & Reconciled)` |
+### f. Production runner (single-batch demonstration)
 
-*Reconciliation Note: Audited precision is calculated on post-truncation capacity cap ($\text{TP}=1,979$, total review budget $= 12,000$, yielding $\frac{1,979}{12,000} = 16.49\%$), resolving pre-fix metric discrepancies.*
+```bash
+python run_sentinel_pipeline.py
+```
 
-> ⚠️ **Pending re-verification**: The table above reflects the pipeline's last full audited run. Because the graph centrality feature leakage fix (Failure Recovery 5) changes how `device_degree_centrality`, `card_degree_centrality`, and `component_size` are computed, **you should re-run Option A above and confirm these numbers before citing them as final** — do not assume they are unchanged from a pre-fix run. Update this table with the freshly reconciled numbers once you've re-run the pipeline.
-
-### Visual Artifacts & Confusion Matrix
-
-![Audited Confusion Matrix](docs/results/confusion_matrix.png)
-
-![Precision Recall Curve](docs/results/pr_curve.png)
-
-*The precision-recall curve above is computed from a real threshold sweep over actual saved model predictions (see Option E), not a fabricated parametric approximation.*
-
-### Submission File Integrity Metrics (`submission.csv`)
-
-| Verification Check | Metric Value | Status |
-| :--- | :--- | :--- |
-| **Total Prediction Rows** | `506,691` rows | `PASSED` |
-| **Schema Integrity** | `[TransactionID, isFraud]` (Zero NaNs) | `PASSED` |
-| **Probability Bounds** | Min: `0.0020` \| Max: `0.9783` | `PASSED` |
-| **Mean Fraud Score** | `8.56%` (Calibrated to financial prior) | `PASSED` |
-| **Median Fraud Score** | `0.0481` | `PASSED` |
+Imports `SentinelGraphExplainer` from `sentinel_explainer.py` (single canonical class definition — the previously duplicated inline copy has been removed). It first attempts to extract a real entity subgraph from the raw test data; if the raw test files are unavailable it falls back to a clearly labeled `[SYNTHETIC DEMO DATA]` explanation card. The explainer is a **template-driven layer over existing model outputs** — it takes no autonomous action, does not re-score, and does not modify the model's decision.
 
 ---
 
-## 🛠️ Failure Recovery & Debugging History
+## Final Results
 
-In accordance with system reliability standards, six critical failure modes were identified, debugged, and resolved during system development. For full technical details and before/after metrics, see the **[Failure Recovery & Debugging Log](docs/FAILURE_LOG.md)**.
+| Metric      | Baseline LightGBM (SHIPPED)   | Structural Sentinel (tested) |
+| ----------- | ----------------------------- | ---------------------------- |
+| Threshold   | 0.105172                      | 0.074138                     |
+| Precision   | 17.19%                        | 17.38%                       |
+| Recall      | 66.92%                        | 67.66%                       |
+| F1-Score    | 0.2736                        | 0.2766                       |
+| TP/FP/FN/TN | 2,063 / 9,937 / 1,020 / 75,561 | 2,086 / 9,914 / 997 / 75,584 |
+| Total Cost  | ₹14,422,273.74                | ₹15,162,034.04               |
+| Alerts      | 12,000 (hard cap)             | 12,000 (hard cap)            |
 
-1. **Target Label Leakage Fix**: Eliminated historical fraud target encoding; replaced with cumulative streaming entity graph state (`0%` leakage verified).
-2. **Operational Capacity Hard Truncation**: Reconciled unconstrained alert overruns ($>15,500$ alerts) by incorporating exponential capacity penalties and hard top-12,000 alert truncation.
-3. **FX Currency Normalization**: Fixed currency mismatch between USD transaction amounts and INR review costs by standardizing on $1\text{ USD} = 83.00\text{ INR}$.
-4. **Stale Precision Metric Reconciliation**: Reconciled precision calculation to post-truncation 12,000 capacity review budget (**`16.49%`**, $\text{TP}=1,979 / 12,000$), achieving a **`+62.0%`** relative precision gain over baseline.
-5. **Graph Centrality Temporal Leakage**: Discovered that `device_degree_centrality`, `card_degree_centrality`, and `component_size` were computed via `.transform("nunique"/"count")`, which aggregates across an entire entity group including **future** transactions relative to each row — a look-ahead leak invisible to the target-leakage-only Audit Check 1. Fixed by deriving centrality strictly from already time-ordered cumulative unique-count features, with an enforced function call order (`build_all_features()`) and a runtime guard against future accidental reordering.
-6. **Fabricated Precision-Recall Curve**: The PR curve visualization was initially generated from a fabricated parametric quadratic approximation anchored to only one real data point, rather than an actual threshold sweep — undermining its purpose of proving the operating threshold wasn't cherry-picked. Fixed by saving real predicted probabilities from model evaluation and computing the curve via `sklearn.metrics.precision_recall_curve` (see `generate_audit_plots.py`), which now refuses to run without real saved predictions rather than silently substituting an approximation.
+**Net: the Baseline costs ₹739,760.29 (5.13%) less than the Sentinel.** The simpler model wins. The Sentinel's marginally higher precision and recall do not translate into lower cost, because the errors it corrects are not the expensive ones.
+
+### Audit Status — all PASSED
+
+- **Leakage.** Top gain-ranked features: `V258`, `C1`, `V294`, `C4`, `TransactionAmt`, `V70`, `C5`, `D2`, `email_card_ratio`, `V201`. Zero historical fraud-rate proxies among the top features.
+- **Overfitting.** Validation recall 0.7804, test recall 0.7947 — divergence 0.0143, well inside the ≤0.08 tolerance.
+- **Capacity.** Exactly 12,000 alerts fired, enforced by hard truncation of the alert queue.
+
+### Context
+
+A 3.48% fraud base rate means random guessing yields 3.48% precision. **17.19% precision is ~4.9× better than random** at 67% recall under a fixed 12,000-alert cap. No honest published result on IEEE-CIS — including the Kaggle-winning solution at ~0.94 AUC — reports anywhere near 90% precision at useful recall. Any such claim on this dataset should be treated as a leakage signal.
+
+### Result images
+
+![Baseline confusion matrix](docs/results/confusion_matrix_baseline.png)
+
+![Sentinel confusion matrix](docs/results/confusion_matrix_sentinel.png)
+
+![Precision–Recall curve](docs/results/pr_curve.png)
+
+All three are computed live from saved predictions; none are hardcoded.
 
 ---
 
-## 📚 Technical Documentation & System Links
+## Model Selection & Negative Results
 
-Explore detailed documentation and source code modules:
+Five configurations were tested. The comparison was kept fair at every step: any raw-column additions (V-columns, D-columns) went into **both** models, so the only difference between Baseline and Sentinel remained the graph/entity/velocity feature block. Cost is the tiebreaker.
 
-### 📖 Documentation Architecture & Specifications
-- **[Architecture Deep-Dive](docs/ARCHITECTURE.md)**: Detailed specifications on Graph Centrality Engine, Multiscale Velocity Sliding Windows, and Cost Optimization Formulation.
-- **[Feature Engineering Taxonomy](docs/FEATURE_TAXONOMY.md)**: Complete taxonomy of all 44 structural, velocity, centrality, and composite features.
-- **[Automated Audit Suite](docs/AUDIT_SUITE.md)**: Detailed breakdown of the 3 automated audit checks (Target Leakage, Overfitting Split Divergence, Capacity Constraints).
-- **[Failure Recovery Log](docs/FAILURE_LOG.md)**: Comprehensive root cause analysis and resolution log for six critical system debugging iterations.
+| # | Configuration                                                | Outcome                                        |
+| - | ------------------------------------------------------------ | ---------------------------------------------- |
+| 1 | Graph/velocity features only (weak raw features)             | **Sentinel beat Baseline by +6.08%** on cost   |
+| 2 | + Vesta V/D engineered columns (added to both models)        | Baseline beat Sentinel                         |
+| 3 | + Time-safe UID client-aggregation features                  | Baseline beat Sentinel                         |
+| 4 | + Amount-weighted cost-sensitive training                    | Baseline beat Sentinel (marginal)              |
+| 5 | + 3-model ensemble (LightGBM + XGBoost + CatBoost)           | Baseline beat Sentinel                         |
 
-### 💻 Codebase Modules & Scripts
-- **[run_sentinel_pipeline.py](run_sentinel_pipeline.py)**: Main production runner; imports `SentinelGraphExplainer` from `sentinel_explainer.py` (single canonical definition — not duplicated) and attempts real subgraph extraction before falling back to a labeled demo card.
-- **[ieee_pipeline_chatgpt_15.py](ieee_pipeline_chatgpt_15.py)**: Full audited release pipeline for training, auditing, threshold grid search, and benchmark evaluation. Uses `build_all_features()` to enforce the correct, leak-free feature-computation order.
-- **[sentinel_explainer.py](sentinel_explainer.py)**: Canonical forensic decision explainer module for rendering terminal UI decision cards, with an explicit `demo_mode` flag for synthetic vs. real data.
-- **[verify_submission.py](verify_submission.py)**: Submission file sanity and integrity auditor.
-- **[generate_audit_plots.py](generate_audit_plots.py)**: Generates the confusion matrix and precision-recall curve from real, saved model predictions — no fabricated data.
-- **[iterations/generate_submission.py](iterations/generate_submission.py)**: Memory-optimized test set inference and submission generator.
-- **[requirements.txt](requirements.txt)**: System Python dependency manifest.
+**Conclusion.** Once strong raw features exist, added graph/entity/ensemble complexity does not earn its cost on this dataset. Ship the simpler model.
+
+**Why no GNN.** We deliberately did **not** pursue a graph neural network:
+
+- Our own experiments (configurations 2–5 above) show graph features add no value once raw features are strong.
+- Tree ensembles beat deep learning on this exact dataset — the Kaggle-winning solution used blended trees, not GNNs.
+- GNN message-passing across a time split is highly leakage-prone; the correctness cost of getting it wrong is high and the expected upside is low.
 
 ---
 
-## 📄 License
+## Failure Recovery & Debugging History
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Every item below was a real defect discovered during development. All are fixed in the shipped pipeline. Full detail in [docs/FAILURE_LOG.md](docs/FAILURE_LOG.md).
+
+1. **Historical fraud-rate leakage** — removed; replaced with cumulative streaming state that never sees future rows.
+2. **Graph centrality look-ahead leakage** — rebuilt strictly time-ordered so no row's centrality depends on later transactions.
+3. **Unfair `ring_boost` heuristic** — removed; it multiplied only the Sentinel's probabilities and gave it an untrained advantage.
+4. **Soft vs. hard capacity enforcement** — a soft cap was letting 18,601 alerts through a stated 12,000 cap; replaced with real hard truncation.
+5. **Fabricated PR curve** — was a parametric approximation; rebuilt from real `sklearn.metrics.precision_recall_curve` on the saved predictions.
+6. **Hardcoded confusion matrix risk** — rebuilt to compute live from the saved prediction arrays.
+7. **Stale precision metric discrepancy** — reconciled so the headline precision matches the post-truncation confusion matrix.
+8. **Capacity cap ambiguity/drift** — the cap drifted 12k → 15k → 20k across experiments; locked at **12,000** based on operational defensibility, not on which value minimized cost.
+9. **Currency unit mismatch** — `TransactionAmt` is USD; added an explicit ₹83 FX conversion so cost math is in a single unit.
+
+---
+
+## Documentation
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/FEATURE_TAXONOMY.md](docs/FEATURE_TAXONOMY.md)
+- [docs/AUDIT_SUITE.md](docs/AUDIT_SUITE.md)
+- [docs/FAILURE_LOG.md](docs/FAILURE_LOG.md)
+
+---
+
+## Codebase
+
+- `ieee_pipeline_chatgpt_15.py` — canonical training/audit pipeline.
+- `run_sentinel_pipeline.py` — production runner; imports `SentinelGraphExplainer`.
+- `sentinel_explainer.py` — canonical decision-card explainer class.
+- `generate_audit_plots.py` — generates all 3 result images live from saved predictions.
+- `verify_submission.py` — submission integrity auditor.
+- `iterations/` — full archived pipeline version history (13, 13(1), 14, ensemble variant).
+- `requirements.txt` — pinned dependencies.
+
+---
+
+## Production Integration
+
+The pipeline has been validated **offline only** on the IEEE-CIS dataset. In production it would score the live transaction stream via the payment gateway's payment/webhook APIs, routing the top-risk transactions into the 12,000-capacity review queue. Live gateway integration is out of scope for this benchmark submission.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
