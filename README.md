@@ -45,9 +45,8 @@ pip install -r requirements.txt
 
 ### 2. Dataset Setup
 Ensure the IEEE-CIS Fraud Detection dataset files are placed in the target directory:
-
-```
 Download the IEEE-CIS Fraud Detection dataset from Kaggle: 👉 https://www.kaggle.com/c/ieee-fraud-detection/data
+```
 test_datasets/kaggle/ieee-fraud-detection/
 ├── train_transaction.csv
 ├── train_identity.csv
