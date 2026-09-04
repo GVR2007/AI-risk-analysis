@@ -1,87 +1,110 @@
 # Automated Audit Suite & Integrity Verification
 
-To ensure model safety, financial compliance, and operational reliability in real-world payment networks, **Abuse-Ring Sentinel** includes three automated audit checks integrated into the execution pipeline, complemented by a complete [Failure Recovery & Debugging Log](FAILURE_LOG.md).
+**Abuse-Ring Sentinel** includes three automated audit checks integrated directly into the training pipeline, plus a submission-file sanity auditor. All results below are from the final locked run at the **12,000-review capacity cap**, computed on the Baseline model (the shipped model) unless otherwise noted.
 
 ---
 
 ## 1. Audit Check 1: Target Leakage Verification
 
 ### Problem
-Data leakage occurs when target labels (`isFraud`) from future or concurrent transactions contaminate feature definitions, leading to artificially inflated cross-validation performance that fails in production.
+Data leakage occurs when target labels, or features that implicitly encode them, contaminate the feature space — inflating offline metrics in ways that don't hold in production.
 
 ### Methodology
-- Features are strictly computed using past historical cumulative state up to transaction timestamp $t_i$.
-- Automated gain check evaluates feature importance for any target label proxies.
-- Zero target statistics or historical mean target encoding are permitted in the feature space.
+- All engineered features are computed using strictly past/historical cumulative state relative to each transaction's timestamp.
+- Feature-importance gain is inspected for any target-derived or historical-fraud-rate proxies.
 
-### Result
-`STATUS: PASSED` — 0% Target leakage detected. Top feature importance gains belong strictly to transaction counts and entity overlap indicators (`C1`, `C4`, `C5`, `TransactionAmt`, `card_degree_centrality`, `component_size`).
+### Result (final run)
+```
+V258                                     1459151.34
+C1                                       440316.03
+V294                                     398303.80
+C4                                       312431.36
+TransactionAmt                           212648.39
+V70                                      166030.58
+C5                                       153107.67
+D2                                       146068.37
+email_card_ratio                         141789.32
+V201                                     111888.27
+```
+`STATUS: PASSED` — top feature gains belong to legitimate transaction/entity signals (Vesta engineered V-columns, C-columns, TransactionAmt, and an entity-overlap ratio). Zero historical-fraud-rate features present.
 
 ---
 
 ## 2. Audit Check 2: Overfitting & Split Divergence
 
 ### Problem
-Models trained on complex graph topologies can overfit to specific entity IDs or historical temporal windows, leading to severe performance degradation on out-of-time test streams.
+Complex feature engineering can overfit to specific entity IDs or time windows seen only in training, degrading performance on genuinely out-of-time data.
 
 ### Methodology
-- The pipeline splits the temporal transaction stream chronologically into:
-  - **Train set**: First 70% of stream
-  - **Validation set**: Middle 15% of stream
-  - **Test set**: Final 15% of stream (88,581 transactions)
-- Evaluates recall divergence between validation and test sets:
-  $$\Delta_{\text{recall}} = |\text{Recall}_{\text{validation}} - \text{Recall}_{\text{test}}|$$
-- Maximum allowable threshold tolerance: $\le 0.08$.
+Chronological split — Train (70%) / Validation (15%) / Test (15%). Divergence is measured as:
 
-### Result
-- **Validation Recall**: `0.6262` (62.62%)
-- **Test Recall**: `0.6413` (64.13%)
-- **Divergence**: `0.0151`
-- `STATUS: PASSED` — Divergence ($0.0151$) is well within safe tolerance.
+$$\Delta_{\text{recall}} = |\text{Recall}_{\text{validation}} - \text{Recall}_{\text{test}}|$$
+
+Tolerance: ≤ 0.08.
+
+### Result (final run)
+- **Validation Recall:** 0.7804
+- **Test Recall:** 0.7947
+- **Divergence:** 0.0143
+`STATUS: PASSED` — well within tolerance.
+
+*(Note: these recall figures are the model's raw/unconstrained recall used for the overfitting check itself, prior to the 12,000-alert capacity truncation applied for the headline results below.)*
 
 ---
 
-## 3. Audit Check 3: Capacity Constraint Enforcement
+## 3. Audit Check 3: Capacity Constraint Enforcement (Hard Truncation)
 
 ### Problem
-In high-volume payment processing, issuing alert notifications faster than manual review teams can process creates operational backlogs and uninspected transactions.
+Flagging more alerts than a fraud-ops team can review creates operational backlogs, meaning the "recall" a model claims is never actually realized in practice.
 
 ### Methodology
-- The optimization engine monitors total flagged alert volume against a hard operational capacity budget ($N_{\text{cap}} = 12,000$ reviews).
-- Candidate threshold search applies an exponential penalty ($\text{excess\_alerts} \times \text{₹}400.00$) during optimization to guide threshold selection towards compliant regions.
-- Post-truncation hard capping enforces that exactly the top 12,000 highest-exposure flagged transactions are assigned to review analysts.
+Predictions are ranked by probability and **hard-truncated** to exactly `MAX_MANUAL_REVIEWS_CAP = 12,000` — this is a real truncation of the prediction set, not a soft cost penalty. (An earlier version of this pipeline used only a soft penalty, which allowed the alert count to exceed the cap; see Failure Recovery item 4 for the fix.)
 
-### Result & Visual Artifacts
-![Audited Confusion Matrix](results/confusion_matrix.png)
+### Result — Baseline (SHIPPED model), 88,581 total test transactions
 
-#### Reconciled Post-Truncation Confusion Matrix (88,581 Test Transactions)
-
-| | Predicted Legitimate ($Y=0$) | Predicted Fraud Alert ($Y=1$) | Total |
+| | Predicted Legitimate | Predicted Fraud (Alert) | Total |
 | :--- | :---: | :---: | :---: |
-| **Actual Legitimate ($Y=0$)** | **TN = 75,474** (Cleared Normal)<br>Cost: ₹0.00 | **FP = 10,021** (Flagged Review)<br>Review Labor Cost: ₹250,525.00 | **85,495** |
-| **Actual Fraud ($Y=1$)** | **FN = 1,107** (Missed Fraud)<br>Financial Exposure: ₹15.41M | **TP = 1,979** (Prevented Loss)<br>Fraud Prevented: ₹2.97M | **3,086** |
-| **Total** | **76,581** | **12,000 (Hard Capacity Cap)** | **88,581** |
+| **Actual Legitimate** | TN = 75,561 (Cost ₹0) | FP = 9,937 (Cost ₹248,425) | 85,498 |
+| **Actual Fraud** | FN = 1,020 (Chargeback exposure ₹1,530,000 + amount) | TP = 2,063 (Prevented loss) | 3,083 |
+| **Total** | 76,581 | **12,000 (hard cap)** | 88,581 |
 
-- **Pre-Truncation Alerts Flagged**: `15,542`
-- **Operational Capacity Cap**: `12,000`
-- **Reconciled Audited Precision**: **`16.49%`** ($\frac{\text{TP}}{\text{Total Capacity Budget}} = \frac{1,979}{12,000} = 16.49\%$)
-- **Penalty Clarification**: *Because alerts are hard-truncated to the cap before cost evaluation, the exponential penalty term is structurally always zero in the final reported metric; it exists to guide the pre-truncation threshold search.*
-- `STATUS: CAPACITY CAPPED & AUDITED` — Hard-truncated to 12,000 max reviews with reconciled 16.49% precision (+62.0% relative gain over baseline).
+- **Precision:** 2,063 / 12,000 = **17.19%**
+- **Recall:** 2,063 / 3,083 = **66.92%**
+`STATUS: PASSED` — alerts flagged exactly equal 12,000; the branch that would fire on exceeding the cap is unreachable by construction.
 
-![Precision Recall Curve](results/pr_curve.png)
+### Result — Structural Sentinel (tested variant, not shipped)
+
+| | Predicted Legitimate | Predicted Fraud (Alert) | Total |
+| :--- | :---: | :---: | :---: |
+| **Actual Legitimate** | TN = 75,584 | FP = 9,914 (Cost ₹247,850) | 85,498 |
+| **Actual Fraud** | FN = 997 (Chargeback exposure ₹1,495,500 + amount) | TP = 2,086 | 3,083 |
+| **Total** | 76,581 | **12,000 (hard cap)** | 88,581 |
+
+- **Precision:** 2,086 / 12,000 = **17.38%**
+- **Recall:** 2,086 / 3,083 = **67.66%**
+
+**Both models comply exactly with the 12,000 cap. The Sentinel scores marginally higher precision/recall but at higher total cost — see README "Model Selection & Negative Results" for why the Baseline is shipped.**
+
+![Baseline Confusion Matrix (Shipped)](results/confusion_matrix_baseline.png)
+![Sentinel Confusion Matrix (Tested)](results/confusion_matrix_sentinel.png)
+![Precision-Recall Curve](results/pr_curve.png)
 
 ---
 
 ## 4. Submission File Sanity Audit (`verify_submission.py`)
 
-Executing `verify_submission.py` performs key automated checks on `submission.csv`:
-
-1. **Schema Check**: Confirms standard `[TransactionID, isFraud]` columns and exactly 506,691 test rows.
-2. **Null & NaN Check**: Guarantees zero missing or non-finite values.
-3. **Probability Bounds**: Verifies all scores lie in $[0.0, 1.0]$ (`Min: 0.0020`, `Max: 0.9783`).
-4. **Calibration Check**: Mean predicted fraud score is `8.56%`, aligning with realistic financial fraud priors ($\approx 1-15\%$).
+1. **Schema Check** — `[TransactionID, isFraud]`, exactly 506,691 test rows.
+2. **Null Check** — zero missing/non-finite values.
+3. **Probability Bounds** — all scores in [0, 1].
+4. **Calibration Check** — mean predicted fraud score aligns with realistic financial fraud priors (~1–15%).
 
 ---
 
-## 5. System Debugging & Failure Recovery
-For detailed root-cause analysis on how target leakage, capacity overruns, currency misalignments, and metric reconciliation were identified and fixed, see the **[Failure Recovery & Debugging Log](FAILURE_LOG.md)**.
+## 5. On the Capacity Cap Value (12,000)
+
+The cap was locked at **12,000**, not chosen to minimize reported cost. During development, we observed that raising the cap (tested at 15,000 and 20,000) monotonically lowers total cost — this is expected and is exactly the degenerate "flag everything" failure mode a capacity constraint exists to prevent. We fixed 12,000 as the defensible capacity for a conservative fraud-ops team and report results at that fixed value only, rather than tuning it post-hoc. See [FAILURE_LOG.md](FAILURE_LOG.md), item 8.
+
+---
+
+## 6. Failure Recovery Cross-Reference
+For full root-cause analysis of all issues surfaced while building and auditing this pipeline, see **[FAILURE_LOG.md](FAILURE_LOG.md)**.

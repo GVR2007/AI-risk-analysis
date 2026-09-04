@@ -69,6 +69,26 @@ BASELINE_FEATURES = [
     "TransactionAmt", "card2", "card3", "card5", "addr2", "dist1", "C1", "C2", "C3", "C4", "C5",
 ]
 
+# Curated subset of Vesta V-columns (top solutions found these informative;
+# using a subset rather than all 339 avoids redundancy/overfitting).
+VESTA_V_FEATURES = [
+    "V12", "V13", "V19", "V20", "V30", "V34", "V35", "V36", "V37", "V38",
+    "V44", "V45", "V53", "V54", "V61", "V62", "V70", "V76", "V78", "V82",
+    "V83", "V87", "V91", "V94", "V127", "V130", "V133", "V136", "V137",
+    "V143", "V149", "V160", "V165", "V170", "V187", "V189", "V201", "V203",
+    "V207", "V208", "V209", "V210", "V212", "V218", "V221", "V234", "V257",
+    "V258", "V264", "V266", "V267", "V271", "V274", "V277", "V283", "V285",
+    "V289", "V291", "V294", "V307", "V308", "V310", "V312", "V313", "V314",
+    "V315", "V317", "V320", "V323", "V324", "V326", "V329", "V332",
+]
+
+# Timedelta (D) features. D1-D15. Some can drift across the time-split
+# boundary, so we watch the overfitting audit after adding these.
+VESTA_D_FEATURES = [
+    "D1", "D2", "D3", "D4", "D5", "D6", "D8", "D9",
+    "D10", "D11", "D13", "D14", "D15",
+]
+
 TRUE_SENTINEL_FEATURES = [
     "device_transaction_count", "card_transaction_count", "address_transaction_count",
     "device_unique_cards", "device_unique_addresses", "device_unique_emails", "device_unique_browsers",
@@ -86,7 +106,15 @@ TRUE_SENTINEL_FEATURES = [
     "high_velocity_device_flag", "ring_candidate_flag",
 ]
 
-HYBRID_FEATURES = list(dict.fromkeys(BASELINE_FEATURES + TRUE_SENTINEL_FEATURES))
+# V and D columns are added to BOTH models so the comparison stays fair —
+# the only difference between BASELINE_FEATURES and the sentinel remains the
+# graph/velocity/ring features, not the raw dataset columns.
+BASELINE_FEATURES_EXTENDED = list(dict.fromkeys(
+    BASELINE_FEATURES + VESTA_V_FEATURES + VESTA_D_FEATURES
+))
+HYBRID_FEATURES = list(dict.fromkeys(
+    BASELINE_FEATURES + VESTA_V_FEATURES + VESTA_D_FEATURES + TRUE_SENTINEL_FEATURES
+))
 
 
 # =====================================================================
@@ -445,9 +473,9 @@ def run_pipeline():
 
     # Baseline
     print("Training Baseline...")
-    X_tr_b, med_b = make_numeric_matrix(train_features, BASELINE_FEATURES)
-    X_va_b, _ = make_numeric_matrix(validation_features, BASELINE_FEATURES, med_b)
-    X_te_b, _ = make_numeric_matrix(test_features, BASELINE_FEATURES, med_b)
+    X_tr_b, med_b = make_numeric_matrix(train_features, BASELINE_FEATURES_EXTENDED)
+    X_va_b, _ = make_numeric_matrix(validation_features, BASELINE_FEATURES_EXTENDED, med_b)
+    X_te_b, _ = make_numeric_matrix(test_features, BASELINE_FEATURES_EXTENDED, med_b)
 
     model_b = create_regularized_model().fit(X_tr_b, y_train)
     val_probs_b = model_b.predict_proba(X_va_b)[:, 1]

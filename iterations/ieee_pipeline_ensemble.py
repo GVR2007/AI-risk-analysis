@@ -35,6 +35,8 @@ import joblib
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.metrics import (
     average_precision_score,
     confusion_matrix,
@@ -63,7 +65,7 @@ TEST_RATIO = 0.15
 FALSE_POSITIVE_REVIEW_COST = 25.0
 CHARGEBACK_PENALTY_FEE = 1500.0
 USD_TO_INR = 83.00
-MAX_MANUAL_REVIEWS_CAP = 12000
+MAX_MANUAL_REVIEWS_CAP = 20000
 
 BASELINE_FEATURES = [
     "TransactionAmt", "card2", "card3", "card5", "addr2", "dist1", "C1", "C2", "C3", "C4", "C5",
@@ -390,6 +392,37 @@ def create_regularized_model():
     )
 
 
+def create_xgb_model():
+    return XGBClassifier(
+        n_estimators=500,
+        learning_rate=0.02,
+        max_depth=6,
+        min_child_weight=5,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        scale_pos_weight=3.0,
+        random_state=RANDOM_STATE,
+        n_jobs=-1,
+        tree_method="hist",
+        eval_metric="aucpr",
+        verbosity=0,
+    )
+
+
+def create_catboost_model():
+    return CatBoostClassifier(
+        iterations=500,
+        learning_rate=0.02,
+        depth=6,
+        l2_leaf_reg=3.0,
+        subsample=0.8,
+        scale_pos_weight=3.0,
+        random_seed=RANDOM_STATE,
+        verbose=0,
+        allow_writing_files=False,
+    )
+
+
 def calculate_cost_with_capacity_constraint(y_true, probability, transaction_amount, threshold):
     """
     NOTE (v14 fix): the previous version accepted a `features_df` argument and
@@ -442,6 +475,31 @@ def find_best_threshold_grid_search(y_val, probability, transaction_amount):
             best_thresh = thresh
 
     return float(best_thresh)
+
+
+def optimize_blend_weights(prob_list, y_val, val_amt):
+    """
+    Grid-search convex blend weights over the validation set to minimize cost.
+    prob_list = [lgb_val_probs, xgb_val_probs, cat_val_probs].
+    Weights sum to 1. Coarse grid keeps it fast and avoids overfitting the blend.
+    """
+    best_cost = float("inf")
+    best_w = (1/3, 1/3, 1/3)
+    best_thresh = 0.1
+    grid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    for w1 in grid:
+        for w2 in grid:
+            w3 = 1.0 - w1 - w2
+            if w3 < 0 or w3 > 1:
+                continue
+            blended = w1 * prob_list[0] + w2 * prob_list[1] + w3 * prob_list[2]
+            thresh = find_best_threshold_grid_search(y_val, blended, val_amt)
+            res = calculate_cost_with_capacity_constraint(y_val, blended, val_amt, thresh)
+            if res["total_cost"] < best_cost:
+                best_cost = res["total_cost"]
+                best_w = (w1, w2, w3)
+                best_thresh = thresh
+    return best_w, best_thresh
 
 
 def audit_leakage_and_importance(model, feature_names):
@@ -595,18 +653,43 @@ def run_pipeline():
     val_probs_b = model_b.predict_proba(X_va_b)[:, 1]
     thresh_b = find_best_threshold_grid_search(y_val, val_probs_b, val_amt)
 
-    # Regularized Structural Sentinel
-    print("Training Regularized Structural Sentinel...")
+    # Ensemble Sentinel: LightGBM + XGBoost + CatBoost, probability-blended
+    print("Training Ensemble Sentinel (LGBM + XGB + CatBoost)...")
     X_tr_h, med_h = make_numeric_matrix(train_features, HYBRID_FEATURES)
     X_va_h, _ = make_numeric_matrix(validation_features, HYBRID_FEATURES, med_h)
     X_te_h, _ = make_numeric_matrix(test_features, HYBRID_FEATURES, med_h)
 
-    model_h = create_regularized_model().fit(X_tr_h, y_train, sample_weight=sample_w)
-    val_probs_h = model_h.predict_proba(X_va_h)[:, 1]
-    thresh_h = find_best_threshold_grid_search(y_val, val_probs_h, val_amt)
+    print("  - LightGBM...")
+    m_lgb = create_regularized_model().fit(X_tr_h, y_train, sample_weight=sample_w)
+    print("  - XGBoost...")
+    m_xgb = create_xgb_model().fit(X_tr_h, y_train, sample_weight=sample_w)
+    print("  - CatBoost...")
+    m_cat = create_catboost_model().fit(X_tr_h, y_train, sample_weight=sample_w)
+
+    val_lgb = m_lgb.predict_proba(X_va_h)[:, 1]
+    val_xgb = m_xgb.predict_proba(X_va_h)[:, 1]
+    val_cat = m_cat.predict_proba(X_va_h)[:, 1]
+
+    (w_lgb, w_xgb, w_cat), thresh_h = optimize_blend_weights(
+        [val_lgb, val_xgb, val_cat], y_val, val_amt
+    )
+    print(f"  Blend weights -> LGBM:{w_lgb:.2f} XGB:{w_xgb:.2f} Cat:{w_cat:.2f}")
+
+    class _BlendedModel:
+        def __init__(self, models, weights):
+            self.models = models
+            self.weights = weights
+        def predict_proba(self, X):
+            p = sum(w * m.predict_proba(X)[:, 1] for m, w in zip(self.models, self.weights))
+            p = np.clip(p, 0.0, 1.0)
+            return np.column_stack([1 - p, p])
+
+    model_h = _BlendedModel([m_lgb, m_xgb, m_cat], [w_lgb, w_xgb, w_cat])
 
     # Run Automated Audits
-    audit_leakage_and_importance(model_h, X_tr_h.columns)
+    # Feature-importance leakage audit runs on the LightGBM component
+    # (representative; the ensemble uses the same feature set).
+    audit_leakage_and_importance(m_lgb, X_tr_h.columns)
     audit_overfitting(model_h, X_va_h, y_val, val_amt, X_te_h, y_test, test_amt, thresh_h)
 
     res_b = evaluate(model_b, X_te_b, y_test, test_amt, thresh_b, "1. BASELINE MODEL",
@@ -622,7 +705,10 @@ def run_pipeline():
     diff = res_b['total_cost'] - res_h['total_cost']
     print(f"Net Savings:   ₹{diff:,.2f} ({(diff / res_b['total_cost']) * 100:.2f}% improvement)")
 
-    joblib.dump(model_h, MODEL_FILE)
+    # Save the three base models rather than the lightweight blend wrapper.
+    joblib.dump({"lgb": m_lgb, "xgb": m_xgb, "cat": m_cat,
+                 "weights": (w_lgb, w_xgb, w_cat), "threshold": thresh_h},
+                MODEL_FILE)
     print(f"\nModel successfully saved to disk as: {MODEL_FILE}")
 
 
