@@ -246,6 +246,8 @@ load_data()
   ▼ audit_capacity(sentinel)
   ▼ print FINAL COMPARISON (costs, precision, recall, net delta)
   ▼ joblib.dump(sentinel) → ieee_abuse_ring_sentinel_v15.pkl
+  ▼ joblib.dump(model_h) → ieee_abuse_ring_sentinel_sentinel_v15.pkl   (tested, not shipped)
+
 ```
 
 ---
