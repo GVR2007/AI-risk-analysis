@@ -95,7 +95,9 @@ Nine distinct issues were identified, diagnosed, and resolved during the develop
 ---
 ## 10. Model/Pipeline Version Mismatch in Production Runner
 **🔴 Issue**: run_sentinel_pipeline.py's retrain fallback and MODEL_FILE constant still pointed at the superseded  `ieee_abuse_ring_sentinel_v13.pkl` and `ieee_pipeline_chatgpt_13.py` — the original leaky-centrality pipeline — rather than the actual final v15 artifacts. Had the model file ever gone missing, this would have silently retrained using old, already-fixed bugs instead of the real final pipeline.
+
 **🛠️ Fix**: Updated both references to v15 consistently.
+
 **🟢 Outcome**: Production runner and training pipeline now reference the same model version; no silent fallback to superseded code.
 
 ---
