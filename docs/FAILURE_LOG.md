@@ -107,6 +107,7 @@ Nine distinct issues were identified, diagnosed, and resolved during the develop
 **🛠️ Fix** : Both models are now saved under distinct, explicit filenames — ieee_abuse_ring_sentinel_baseline_v15.pkl (shipped) and ieee_abuse_ring_sentinel_sentinel_v15.pkl (tested, not shipped).
 
 **🟢 Outcome** : The persisted artifact set now matches the documented decision — anyone loading the "baseline" file gets the actual shipped model.
+
 ---
 ## Summary
 
