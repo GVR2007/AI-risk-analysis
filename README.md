@@ -23,7 +23,7 @@ A cost-sensitive, capacity-constrained fraud detector for the IEEE-CIS Fraud Det
 ### a. Setup
 
 ```bash
-git clone <this-repo>
+git clone https://github.com/GVR2007/AI-risk-analysis.git
 cd Razor_pay
 python -m venv venv
 source venv/bin/activate
