@@ -25,6 +25,19 @@ CHANGELOG (v13 -> v14):
       for both models' real test-set predictions, required by
       generate_audit_plots.py to compute a genuine precision-recall curve
       instead of a fabricated approximation.
+
+CHANGELOG (v15, this pass -- MODEL PERSISTENCE FIX):
+    - Previously joblib.dump(model_h, MODEL_FILE) saved ONLY the Sentinel
+      (model_h, fit on HYBRID_FEATURES) under a single generic filename.
+      Since the README's "Model Selection & Negative Results" section states
+      the Baseline is the SHIPPED model (it wins on cost), the one .pkl
+      artifact actually persisted to disk was the model this project
+      concluded should NOT be shipped -- a real contradiction between code
+      and documented narrative.
+    - Fixed: both models are now saved under clearly distinguishing
+      filenames -- BASELINE_MODEL_FILE (the shipped model) and
+      SENTINEL_MODEL_FILE (the tested-but-rejected variant) -- so the
+      persisted artifacts match what the docs actually claim.
 """
 
 import os
@@ -52,7 +65,12 @@ warnings.filterwarnings("ignore")
 DATA_DIR = "test_datasets/kaggle/ieee-fraud-detection"
 TRAIN_TRANSACTION_FILE = "train_transaction.csv"
 TRAIN_IDENTITY_FILE = "train_identity.csv"
-MODEL_FILE = "ieee_abuse_ring_sentinel_v15.pkl"
+
+# Two distinct model files -- see CHANGELOG above. BASELINE_MODEL_FILE is the
+# SHIPPED model (matches README's "Model Selection & Negative Results").
+BASELINE_MODEL_FILE = "ieee_abuse_ring_sentinel_baseline_v15.pkl"
+SENTINEL_MODEL_FILE = "ieee_abuse_ring_sentinel_sentinel_v15.pkl"
+
 ARTIFACTS_DIR = "artifacts"
 
 RANDOM_STATE = 42
@@ -107,7 +125,7 @@ TRUE_SENTINEL_FEATURES = [
     "uid_amt_mean_prev", "uid_amt_std_prev", "uid_txn_count_prev", "uid_amt_deviation",
 ]
 
-# V and D columns are added to BOTH models so the comparison stays fair —
+# V and D columns are added to BOTH models so the comparison stays fair --
 # the only difference between BASELINE_FEATURES and the sentinel remains the
 # graph/velocity/ring features, not the raw dataset columns.
 BASELINE_FEATURES_EXTENDED = list(dict.fromkeys(
@@ -146,7 +164,7 @@ def prepare_entities(df):
 def add_structural_ring_features(df):
     """
     Must run BEFORE add_graph_centrality_features(). Sorts by TransactionDT
-    and builds strictly time-ordered cumulative counts — no row ever sees a
+    and builds strictly time-ordered cumulative counts -- no row ever sees a
     future transaction's contribution to its own features.
     """
     df = df.copy().sort_values("TransactionDT").reset_index(drop=True)
@@ -181,7 +199,7 @@ def add_graph_centrality_features(df):
     LEAK-FREE VERSION (v14 fix).
 
     Previously used df.groupby(...).transform("nunique"/"count"), which
-    aggregates across the ENTIRE group — including transactions that occur
+    aggregates across the ENTIRE group -- including transactions that occur
     AFTER the current row in time. A transaction on day 1 could "see"
     devices/cards that only appear on day 30, which is impossible in a real
     production system and inflates offline metrics.
@@ -345,7 +363,7 @@ def build_future_features(current_df, history_df):
 def build_sample_weights(amount_series, base_weight=1.0, amount_scale=1.0):
     """
     Per-sample training weights that scale with transaction amount, so the
-    model penalizes errors on high-value transactions more heavily —
+    model penalizes errors on high-value transactions more heavily --
     aligning the training objective with the ₹ cost function.
 
     Weight = base_weight + amount_scale * log1p(amount_in_inr) / mean_log_amount
@@ -397,7 +415,7 @@ def calculate_cost_with_capacity_constraint(y_true, probability, transaction_amo
     based on raw feature values (device_unique_cards, component_size), applied
     ONLY when features_df was passed (i.e. only for the Sentinel, never the
     Baseline). This gave the Sentinel an untrained, arbitrary advantage and
-    made the two models' comparison unfair. It has been removed — both models
+    made the two models' comparison unfair. It has been removed -- both models
     are now scored purely on their own predict_proba() output, with no
     post-hoc adjustment.
     """
@@ -563,7 +581,7 @@ def evaluate(model, X_test, y_test, amount_test, threshold, name, save_artifacts
 
 
 def run_pipeline():
-    print(f"\n{'=' * 70}\nABUSE-RING SENTINEL V14 (LEAK-FREE, FULL AUDITED RELEASE)\n{'=' * 70}")
+    print(f"\n{'=' * 70}\nABUSE-RING SENTINEL V15 (LEAK-FREE, FULL AUDITED RELEASE)\n{'=' * 70}")
     df = load_data().sort_values("TransactionDT").reset_index(drop=True)
 
     n = len(df)
@@ -622,8 +640,16 @@ def run_pipeline():
     diff = res_b['total_cost'] - res_h['total_cost']
     print(f"Net Savings:   ₹{diff:,.2f} ({(diff / res_b['total_cost']) * 100:.2f}% improvement)")
 
-    joblib.dump(model_h, MODEL_FILE)
-    print(f"\nModel successfully saved to disk as: {MODEL_FILE}")
+    # Save BOTH models under clearly distinguishing filenames. Previously this
+    # only saved model_h (the Sentinel) under a single generic MODEL_FILE name
+    # -- meaning the one .pkl actually shipped in the repo was the model this
+    # project's own README says was tested and REJECTED, not the Baseline
+    # that was actually chosen for deployment. Both are now saved explicitly,
+    # so the persisted artifacts match the "Baseline is shipped" narrative.
+    joblib.dump(model_b, BASELINE_MODEL_FILE)
+    joblib.dump(model_h, SENTINEL_MODEL_FILE)
+    print(f"\nShipped model saved to disk as: {BASELINE_MODEL_FILE}")
+    print(f"Tested (not shipped) Sentinel saved to disk as: {SENTINEL_MODEL_FILE}")
 
 
 if __name__ == "__main__":

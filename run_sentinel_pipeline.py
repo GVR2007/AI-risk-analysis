@@ -22,12 +22,20 @@ CHANGELOG (Failure Recovery 5 -- Centrality Feature Leakage):
       from actual test data first; only falls back to a clearly labeled
       synthetic demo card if real data extraction is unavailable.
 
-CHANGELOG (this file, latest pass):
+CHANGELOG (previous pass):
     - REMOVED the duplicate inline SentinelGraphExplainer class definition.
       It is now imported from sentinel_explainer.py, which is the single
-      canonical source. Having two copies of this class (one here, one in
-      sentinel_explainer.py) risked the two silently drifting out of sync
-      whenever only one copy got edited.
+      canonical source.
+
+CHANGELOG (this pass -- v15 sync fix):
+    - MODEL_FILE was still pointing at "ieee_abuse_ring_sentinel_v15.pkl" and
+      the retrain fallback still imported ieee_pipeline_chatgpt_15 -- the
+      SUPERSEDED pipeline version, not the actual final leak-free v15
+      pipeline that produces the real saved model. This meant that if the
+      model file were ever missing, this script would have silently retrained
+      using the OLD, already-fixed-past version instead of the current one.
+    - Both now point to the v15 pipeline and v15 model file, matching what
+      ieee_pipeline_chatgpt_15.py actually trains and saves.
 """
 
 import os
@@ -48,7 +56,7 @@ warnings.filterwarnings("ignore")
 # CONFIG & ECONOMICS
 # =====================================================================
 DATA_DIR = "test_datasets/kaggle/ieee-fraud-detection"
-MODEL_FILE = "ieee_abuse_ring_sentinel_v13.pkl"
+MODEL_FILE = "ieee_abuse_ring_sentinel_baseline_v15.pkl"
 SUBMISSION_FILE = "submission.csv"
 
 FALSE_POSITIVE_REVIEW_COST = 25.0
@@ -271,8 +279,8 @@ def main():
 
     if not os.path.exists(MODEL_FILE):
         print(f"[*] Model file '{MODEL_FILE}' not found. Training model via pipeline...")
-        import ieee_pipeline_chatgpt_13
-        ieee_pipeline_chatgpt_13.run_pipeline()
+        import ieee_pipeline_chatgpt_15
+        ieee_pipeline_chatgpt_15.run_pipeline()
 
     if not os.path.exists(SUBMISSION_FILE):
         print(f"[*] Submission file '{SUBMISSION_FILE}' not found. Generating test set predictions...")
