@@ -102,11 +102,11 @@ Nine distinct issues were identified, diagnosed, and resolved during the develop
 
 ---
 ## 11. Shipped Model Persistence Mismatch
-** 🔴 Issue ** : run_pipeline() called joblib.dump(model_h, MODEL_FILE) — persisting only the Sentinel (the tested-and-rejected variant) under a single generic filename. The Baseline, the model actually chosen for deployment per "Model Selection & Negative Results," was never saved to disk at all.
+**🔴 Issue** : run_pipeline() called joblib.dump(model_h, MODEL_FILE) — persisting only the Sentinel (the tested-and-rejected variant) under a single generic filename. The Baseline, the model actually chosen for deployment per "Model Selection & Negative Results," was never saved to disk at all.
 
-** 🛠️ Fix ** : Both models are now saved under distinct, explicit filenames — ieee_abuse_ring_sentinel_baseline_v15.pkl (shipped) and ieee_abuse_ring_sentinel_sentinel_v15.pkl (tested, not shipped).
+**🛠️ Fix** : Both models are now saved under distinct, explicit filenames — ieee_abuse_ring_sentinel_baseline_v15.pkl (shipped) and ieee_abuse_ring_sentinel_sentinel_v15.pkl (tested, not shipped).
 
-** 🟢 Outcome ** : The persisted artifact set now matches the documented decision — anyone loading the "baseline" file gets the actual shipped model.
+**🟢 Outcome** : The persisted artifact set now matches the documented decision — anyone loading the "baseline" file gets the actual shipped model.
 ---
 ## Summary
 
