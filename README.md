@@ -61,11 +61,11 @@ test_datasets/kaggle/ieee-fraud-detection/
 Run the fully audited Sentinel training pipeline to compute graph/velocity features (via the leak-free `build_all_features()` entry point), train models, run automated audits, and evaluate cost savings. This step also saves the real predicted probabilities (`artifacts/*_y_true.npy`, `artifacts/*_y_proba.npy`) needed for plot generation in Option E.
 
 ```bash
-python ieee_pipeline_chatgpt_13.py
+python ieee_pipeline_chatgpt_15.py
 ```
 *or using the workspace environment:*
 ```bash
-./venv/bin/python3 ieee_pipeline_chatgpt_13.py
+./venv/bin/python3 ieee_pipeline_chatgpt_15.py
 ```
 
 #### Option B: Production Sentinel Runner & Analyst Decision-Card Renderer
@@ -168,7 +168,7 @@ Explore detailed documentation and source code modules:
 
 ### 💻 Codebase Modules & Scripts
 - **[run_sentinel_pipeline.py](run_sentinel_pipeline.py)**: Main production runner; imports `SentinelGraphExplainer` from `sentinel_explainer.py` (single canonical definition — not duplicated) and attempts real subgraph extraction before falling back to a labeled demo card.
-- **[ieee_pipeline_chatgpt_13.py](ieee_pipeline_chatgpt_13.py)**: Full audited release pipeline for training, auditing, threshold grid search, and benchmark evaluation. Uses `build_all_features()` to enforce the correct, leak-free feature-computation order.
+- **[ieee_pipeline_chatgpt_15.py](ieee_pipeline_chatgpt_15.py)**: Full audited release pipeline for training, auditing, threshold grid search, and benchmark evaluation. Uses `build_all_features()` to enforce the correct, leak-free feature-computation order.
 - **[sentinel_explainer.py](sentinel_explainer.py)**: Canonical forensic decision explainer module for rendering terminal UI decision cards, with an explicit `demo_mode` flag for synthetic vs. real data.
 - **[verify_submission.py](verify_submission.py)**: Submission file sanity and integrity auditor.
 - **[generate_audit_plots.py](generate_audit_plots.py)**: Generates the confusion matrix and precision-recall curve from real, saved model predictions — no fabricated data.
