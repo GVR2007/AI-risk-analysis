@@ -123,6 +123,7 @@ Nine distinct issues were identified, diagnosed, and resolved during the develop
 | 8 | Capacity cap drift | Risk of unconsciously gaming the cost metric |
 | 9 | Currency unit mismatch | Financial exposure understated by ~83x |
 | 10 | Model/pipeline version mismatch in production runner | Silent fallback to superseded, leaky pipeline code |
+| 11 | Shipped model persistence mismatch | Repo ships the rejected model; docs and artifacts contradict |
 
 
 Every fix in this log made our reported numbers **more conservative**, never more flattering. We consider this log, not the final headline metrics, the strongest evidence of the rigor behind this submission.
