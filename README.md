@@ -70,7 +70,3 @@ Random seed `42` is used throughout for reproducibility. All preprocessing (enco
 
 This is a deliberate trade-off against using one identical test set for every algorithm, documented explicitly in the notebook (Section B3) — both splits are fixed-seed random samples of the same population, so R²/RMSE/MAE stay valid and comparable, just with different precision.
 
-## Generative AI assistance
-
-Code scaffolding (pipeline structure, boilerplate plotting code) for this project was assisted by Claude (Anthropic), per the academic-integrity guidance in the course handout. All data analysis, interpretation, and feature-engineering decisions in the notebooks are the team's own.
-
