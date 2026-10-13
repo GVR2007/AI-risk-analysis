@@ -1,6 +1,27 @@
 .venv/
+.venv310/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 *.pkl
 .DS_Store
+
+# The three small models the web app serves must be committed so the deployed app can load them.
+# Every other trained model is downloaded from Hugging Face on first use (see app/risk_models.py).
+!app/model_store/*.pkl
+
+# local backup of the pre-Review-2 files (created when Review 2 work was copied in)
+.review1_backup/
+
+# Bonus/practice regression dataset (Kaggle Playground Series S4E12) — individual files exceed
+# GitHub's 100MB limit; see README.md for the source link and provenance instead.
+data/playground-series-s4e12/
+
+# Scratch/working notebook, explicitly not a graded deliverable (see README.md).
+notebooks/dash1223.ipynb
+
+# Local scratch and backup artifacts, not part of the submission.
+_to_delete/
+review2_update/
+review2_update.tar.gz
+admin.iic@cb.amrita.edu.gz
