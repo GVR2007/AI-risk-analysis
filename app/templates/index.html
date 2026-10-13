@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Risk Desk</title>
+  <meta name="description" content="Loan risk scoring, insurance-claim fraud detection and credit-card risk segmentation, built for the 23CSE301 Machine Learning capstone.">
+  <meta name="theme-color" content="#E9EEEA" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0F1C2E" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B2B4F'/%3E%3Cg fill='none' stroke='%23E9EEEA' stroke-width='1.1' opacity='.9'%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' transform='rotate(30 16 16)'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' transform='rotate(60 16 16)'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' transform='rotate(90 16 16)'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' transform='rotate(120 16 16)'/%3E%3Cellipse cx='16' cy='16' rx='11' ry='4.5' transform='rotate(150 16 16)'/%3E%3C/g%3E%3C/svg%3E">
+  <link rel="preload" href="{{ url_for('static', filename='fonts/archivo-variable-latin.woff2') }}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script>
+    try { const t = localStorage.getItem('riskdesk-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {}
+  </script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="masthead">
+  <div class="mast-inner">
+    <a class="brand" href="#overview" data-nav="overview" aria-label="Risk Desk, overview">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" data-rosette="mark"></svg>
+      <span class="brand-name">Risk Desk</span>
+    </a>
+    <nav class="mainnav" aria-label="Main">
+      <a href="#loan" data-nav="loan"><span class="nav-name">Loan risk</span><span class="nav-kind">Regression</span></a>
+      <a href="#claim" data-nav="claim"><span class="nav-name">Claim fraud</span><span class="nav-kind">Classification</span></a>
+      <a href="#card" data-nav="card"><span class="nav-name">Card segments</span><span class="nav-kind">Clustering</span></a>
+      <a href="#results" data-nav="results"><span class="nav-name">Model results</span><span class="nav-kind">All tracks</span></a>
+    </nav>
+    <button class="theme-toggle" type="button" id="themeToggle" aria-label="Switch colour theme">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5a8.5 8.5 0 0 1 0 17z" class="fill"/></svg>
+      <span>Dark</span>
+    </button>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+
+  <!-- ============================== OVERVIEW ============================== -->
+  <section class="view" id="view-overview" data-view="overview">
+    <div class="hero">
+      <div class="hero-copy">
+        <h1>Risk decisions you can inspect.</h1>
+        <p class="lead">Three models from our 23CSE301 Machine Learning capstone. Each one answers a question a risk team asks every day. Enter a case or load a real record from the data, and the model gives its answer and shows which inputs moved it.</p>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="-300 -300 600 600" data-rosette="hero"></svg>
+      </div>
+    </div>
+
+    <div class="entries">
+      <a class="entry" href="#loan" style="--tone: var(--low)">
+        <span class="entry-kind">Regression</span>
+        <h2>How risky is this loan applicant?</h2>
+        <p>A tuned Gradient Boosting model reads 27 details about the applicant and the loan, and explains <strong>90.7%</strong> of the variation in risk scores for applicants it never saw in training.</p>
+        <span class="entry-cta">Score an applicant</span>
+      </a>
+      <a class="entry" href="#claim" style="--tone: var(--high)">
+        <span class="entry-kind">Classification</span>
+        <h2>Is this insurance claim fraudulent?</h2>
+        <p>A Bagging ensemble of 50 decision trees estimates the chance of fraud. On held-out claims it catches <strong>71%</strong> of the fraudulent ones, with a weighted F1 of 0.820.</p>
+        <span class="entry-cta">Check a claim</span>
+      </a>
+      <a class="entry" href="#card" style="--tone: var(--mid)">
+        <span class="entry-kind">Clustering</span>
+        <h2>Which segment does this card holder fall into?</h2>
+        <p>K-Means found four behaviour segments among 8,949 real card holders without any labels. The segments are stable: <strong>0.987</strong> mean agreement across ten random restarts.</p>
+        <span class="entry-cta">Place a customer</span>
+      </a>
+    </div>
+
+    <section class="process" aria-labelledby="process-h">
+      <h2 id="process-h">How each model was built</h2>
+      <ol class="steps">
+        <li><h3>Audit</h3><p>Shape, types, missing values, duplicates and impossible values checked in each dataset.</p></li>
+        <li><h3>Clean and engineer</h3><p>Justified imputation, outlier treatment, and new ratio features such as loan-to-income and credit utilisation.</p></li>
+        <li><h3>Compare</h3><p>10 regression, 10 classification and 2 clustering algorithms, each family on one identical split.</p></li>
+        <li><h3>Tune and validate</h3><p>GridSearchCV and 5-fold cross-validation; elbow, silhouette and dendrogram to choose k.</p></li>
+        <li><h3>Deploy</h3><p>The chosen models are saved with joblib and served by this Flask app, reproducing the notebook predictions.</p></li>
+      </ol>
+    </section>
+
+    <section class="datasets" aria-labelledby="data-h">
+      <h2 id="data-h">The data behind the models</h2>
+      <div class="table-wrap">
+        <table class="data-table">
+          <thead><tr><th class="l">Dataset</th><th>Rows</th><th>Columns</th><th class="l">Missing values</th><th class="l">Target</th></tr></thead>
+          <tbody>
+            <tr><td class="l">Financial risk for loan approval</td><td>20,000</td><td>36</td><td class="l">None</td><td class="l">Risk score, continuous</td></tr>
+            <tr><td class="l">Insurance claims fraud</td><td>1,000</td><td>40</td><td class="l">4 columns, stored as “?”</td><td class="l">Fraud reported, yes or no</td></tr>
+            <tr><td class="l">Credit card usage (CC GENERAL)</td><td>8,950</td><td>18</td><td class="l">Minimum payments 313, credit limit 1</td><td class="l">None, unsupervised</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p>23CSE301 Machine Learning capstone, Review 2.</p>
+      <p>Predictions are for coursework demonstration and are not lending or claims advice.</p>
+    </footer>
+  </section>
+
+  <!-- ============================== LOAN ============================== -->
+  <section class="view" id="view-loan" data-view="loan" hidden>
+    <header class="tool-head">
+      <div class="tool-title">
+        <p class="track">Regression</p>
+        <h1>Loan risk score</h1>
+        <p>A tuned Gradient Boosting Regressor trained on 16,000 applications. On the held-out test set it reaches R² 0.907, RMSE 2.40 and MAE 1.59. Lower scores mean safer applicants.</p>
+      </div>
+      <div class="algo-select">
+        <label for="algo-loan">Algorithm</label>
+        <select id="algo-loan" data-algo="loan"></select>
+      </div>
+      <div class="samples" role="group" aria-label="Fill the form with a record from the dataset">
+        <span class="samples-label">Fill with</span>
+        <button type="button" class="chip" data-sample="loan" data-kind="random">A real applicant</button>
+        <button type="button" class="chip" data-sample="loan" data-kind="low">A low-risk one</button>
+        <button type="button" class="chip" data-sample="loan" data-kind="high">A high-risk one</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <form class="case-form" id="form-loan" data-track="loan" novalidate></form>
+      <aside class="verdict" id="verdict-loan" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ============================== CLAIM ============================== -->
+  <section class="view" id="view-claim" data-view="claim" hidden>
+    <header class="tool-head">
+      <div class="tool-title">
+        <p class="track">Classification</p>
+        <h1>Claim fraud check</h1>
+        <p>A tuned Bagging Classifier of 50 decision trees trained on 800 claims. On the held-out test set it flags 71% of fraudulent claims, with weighted F1 0.820 and ROC-AUC 0.817.</p>
+      </div>
+      <div class="algo-select">
+        <label for="algo-claim">Algorithm</label>
+        <select id="algo-claim" data-algo="claim"></select>
+      </div>
+      <div class="samples" role="group" aria-label="Fill the form with a record from the dataset">
+        <span class="samples-label">Fill with</span>
+        <button type="button" class="chip" data-sample="claim" data-kind="random">A real claim</button>
+        <button type="button" class="chip" data-sample="claim" data-kind="genuine">A genuine one</button>
+        <button type="button" class="chip" data-sample="claim" data-kind="fraud">A fraudulent one</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <form class="case-form" id="form-claim" data-track="claim" novalidate></form>
+      <aside class="verdict" id="verdict-claim" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ============================== CARD ============================== -->
+  <section class="view" id="view-card" data-view="card" hidden>
+    <header class="tool-head">
+      <div class="tool-title">
+        <p class="track">Clustering</p>
+        <h1>Card-holder segment</h1>
+        <p>K-Means with four clusters on 8,949 real card holders, with k chosen from the elbow curve, silhouette analysis and the Ward dendrogram. Amounts are six-month totals.</p>
+      </div>
+      <div class="algo-select">
+        <label for="algo-card">Algorithm</label>
+        <select id="algo-card" data-algo="card"></select>
+      </div>
+      <div class="samples" role="group" aria-label="Fill the form with a record from the dataset">
+        <span class="samples-label">Fill with</span>
+        <button type="button" class="chip" data-sample="card" data-kind="random">A real customer</button>
+      </div>
+    </header>
+    <div class="workspace">
+      <form class="case-form" id="form-card" data-track="card" novalidate></form>
+      <aside class="verdict" id="verdict-card" aria-live="polite"></aside>
+    </div>
+  </section>
+
+  <!-- ============================== RESULTS ============================== -->
+  <section class="view" id="view-results" data-view="results" hidden>
+    <header class="tool-head">
+      <div class="tool-title">
+        <p class="track">All tracks</p>
+        <h1>Model results</h1>
+        <p>The comparison tables and key figures from the three notebooks. Within a track, every algorithm was trained and tested on the same split.</p>
+      </div>
+    </header>
+    <div class="tabs" role="tablist" aria-label="Track">
+      <button role="tab" aria-selected="true" aria-controls="tab-regression" id="t-regression">Regression</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-classification" id="t-classification" tabindex="-1">Classification</button>
+      <button role="tab" aria-selected="false" aria-controls="tab-clustering" id="t-clustering" tabindex="-1">Clustering</button>
+    </div>
+    <div class="tab-panel" id="tab-regression" role="tabpanel" aria-labelledby="t-regression"></div>
+    <div class="tab-panel" id="tab-classification" role="tabpanel" aria-labelledby="t-classification" hidden></div>
+    <div class="tab-panel" id="tab-clustering" role="tabpanel" aria-labelledby="t-clustering" hidden></div>
+  </section>
+</main>
+
+<dialog class="lightbox" id="lightbox" aria-label="Figure">
+  <form method="dialog"><button class="chip close" aria-label="Close figure">Close</button></form>
+  <img alt="">
+  <p class="lb-caption"></p>
+</dialog>
+
+<script id="boot" type="application/json">{{ {"loan": loan_options, "claim": claim_options, "modelsByMake": models_by_make, "results": results, "algorithms": algorithms} | tojson }}</script>
+<script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

@@ -1,0 +1,483 @@
+{
+ "regression": {
+  "table": [
+   {
+    "Model": "Gradient Boosting Regressor",
+    "R2": 0.8851,
+    "RMSE": 2.6707,
+    "MAE": 1.8477
+   },
+   {
+    "Model": "Random Forest Regressor",
+    "R2": 0.8758,
+    "RMSE": 2.7771,
+    "MAE": 1.7478
+   },
+   {
+    "Model": "Polynomial Regression (deg=2)",
+    "R2": 0.866,
+    "RMSE": 2.8839,
+    "MAE": 2.2261
+   },
+   {
+    "Model": "Support Vector Regressor (SVR)",
+    "R2": 0.8454,
+    "RMSE": 3.0986,
+    "MAE": 2.2616
+   },
+   {
+    "Model": "Linear Regression",
+    "R2": 0.8199,
+    "RMSE": 3.3441,
+    "MAE": 2.6192
+   },
+   {
+    "Model": "Ridge Regression",
+    "R2": 0.8199,
+    "RMSE": 3.3442,
+    "MAE": 2.6191
+   },
+   {
+    "Model": "Lasso Regression",
+    "R2": 0.8187,
+    "RMSE": 3.3548,
+    "MAE": 2.6205
+   },
+   {
+    "Model": "ElasticNet Regression",
+    "R2": 0.8183,
+    "RMSE": 3.3584,
+    "MAE": 2.6259
+   },
+   {
+    "Model": "K-Nearest Neighbors Regressor",
+    "R2": 0.7469,
+    "RMSE": 3.964,
+    "MAE": 3.0709
+   },
+   {
+    "Model": "Decision Tree Regressor",
+    "R2": 0.716,
+    "RMSE": 4.1995,
+    "MAE": 2.9874
+   }
+  ],
+  "tuning": [
+   {
+    "Model": "Gradient Boosting Regressor",
+    "Best params": "{'model__learning_rate': 0.1, 'model__max_depth': 4, 'model__n_estimators': 200}",
+    "Baseline R2": 0.8851,
+    "Tuned R2": 0.9072
+   },
+   {
+    "Model": "Random Forest Regressor",
+    "Best params": "{'model__max_depth': None, 'model__n_estimators': 300}",
+    "Baseline R2": 0.8758,
+    "Tuned R2": 0.8758
+   }
+  ],
+  "cv": [
+   {
+    "Model": "Gradient Boosting Regressor",
+    "CV R2": 0.9087,
+    "Std": 0.0034
+   },
+   {
+    "Model": "Random Forest Regressor",
+    "CV R2": 0.8743,
+    "Std": 0.0024
+   }
+  ]
+ },
+ "classification": {
+  "final": [
+   {
+    "Model": "Bagging Classifier",
+    "Part": "B",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8535,
+    "Accuracy": 0.815,
+    "Precision": 0.8284,
+    "Recall": 0.815,
+    "F1 (weighted)": 0.8199,
+    "ROC-AUC": 0.8166,
+    "Fraud recall": 0.7143
+   },
+   {
+    "Model": "Gradient Boosting Classifier",
+    "Part": "B",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8435,
+    "Accuracy": 0.785,
+    "Precision": 0.771,
+    "Recall": 0.785,
+    "F1 (weighted)": 0.7752,
+    "ROC-AUC": 0.8204,
+    "Fraud recall": 0.449
+   },
+   {
+    "Model": "Decision Tree Classifier",
+    "Part": "A",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8415,
+    "Accuracy": 0.83,
+    "Precision": 0.8444,
+    "Recall": 0.83,
+    "F1 (weighted)": 0.835,
+    "ROC-AUC": 0.8471,
+    "Fraud recall": 0.7551
+   },
+   {
+    "Model": "MLP Classifier (Neural Network)",
+    "Part": "B",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8329,
+    "Accuracy": 0.76,
+    "Precision": 0.7505,
+    "Recall": 0.76,
+    "F1 (weighted)": 0.7545,
+    "ROC-AUC": 0.7761,
+    "Fraud recall": 0.449
+   },
+   {
+    "Model": "Logistic Regression",
+    "Part": "A",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8267,
+    "Accuracy": 0.79,
+    "Precision": 0.7776,
+    "Recall": 0.79,
+    "F1 (weighted)": 0.7814,
+    "ROC-AUC": 0.8075,
+    "Fraud recall": 0.4694
+   },
+   {
+    "Model": "Support Vector Machine (SVC)",
+    "Part": "A",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8192,
+    "Accuracy": 0.83,
+    "Precision": 0.8226,
+    "Recall": 0.83,
+    "F1 (weighted)": 0.8246,
+    "ROC-AUC": 0.8138,
+    "Fraud recall": 0.5714
+   },
+   {
+    "Model": "Random Forest Classifier",
+    "Part": "B",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8051,
+    "Accuracy": 0.795,
+    "Precision": 0.7936,
+    "Recall": 0.795,
+    "F1 (weighted)": 0.7943,
+    "ROC-AUC": 0.8061,
+    "Fraud recall": 0.5714
+   },
+   {
+    "Model": "AdaBoost Classifier",
+    "Part": "B",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.8032,
+    "Accuracy": 0.735,
+    "Precision": 0.7013,
+    "Recall": 0.735,
+    "F1 (weighted)": 0.711,
+    "ROC-AUC": 0.8292,
+    "Fraud recall": 0.2653
+   },
+   {
+    "Model": "Naive Bayes (Gaussian)",
+    "Part": "A",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.719,
+    "Accuracy": 0.635,
+    "Precision": 0.7241,
+    "Recall": 0.635,
+    "F1 (weighted)": 0.6595,
+    "ROC-AUC": 0.6882,
+    "Fraud recall": 0.6327
+   },
+   {
+    "Model": "K-Nearest Neighbors",
+    "Part": "A",
+    "Representation": "Encoded",
+    "CV F1 (train)": 0.6743,
+    "Accuracy": 0.76,
+    "Precision": 0.7174,
+    "Recall": 0.76,
+    "F1 (weighted)": 0.7031,
+    "ROC-AUC": 0.601,
+    "Fraud recall": 0.1429
+   }
+  ],
+  "baseline_pca": [
+   {
+    "Model": "Logistic Regression",
+    "Part": "A",
+    "Accuracy": 0.775,
+    "Precision": 0.7471,
+    "Recall": 0.775,
+    "F1 (weighted)": 0.7415,
+    "ROC-AUC": 0.7205,
+    "Fraud recall": 0.2653
+   },
+   {
+    "Model": "MLP Classifier (Neural Network)",
+    "Part": "B",
+    "Accuracy": 0.755,
+    "Precision": 0.7292,
+    "Recall": 0.755,
+    "F1 (weighted)": 0.7358,
+    "ROC-AUC": 0.7074,
+    "Fraud recall": 0.3265
+   },
+   {
+    "Model": "Naive Bayes (Gaussian)",
+    "Part": "A",
+    "Accuracy": 0.755,
+    "Precision": 0.7265,
+    "Recall": 0.755,
+    "F1 (weighted)": 0.7328,
+    "ROC-AUC": 0.7847,
+    "Fraud recall": 0.3061
+   },
+   {
+    "Model": "Gradient Boosting Classifier",
+    "Part": "B",
+    "Accuracy": 0.76,
+    "Precision": 0.7213,
+    "Recall": 0.76,
+    "F1 (weighted)": 0.7179,
+    "ROC-AUC": 0.7002,
+    "Fraud recall": 0.2041
+   },
+   {
+    "Model": "K-Nearest Neighbors",
+    "Part": "A",
+    "Accuracy": 0.765,
+    "Precision": 0.7286,
+    "Recall": 0.765,
+    "F1 (weighted)": 0.7119,
+    "ROC-AUC": 0.6373,
+    "Fraud recall": 0.1633
+   },
+   {
+    "Model": "Decision Tree Classifier",
+    "Part": "A",
+    "Accuracy": 0.73,
+    "Precision": 0.6969,
+    "Recall": 0.73,
+    "F1 (weighted)": 0.7072,
+    "ROC-AUC": 0.6193,
+    "Fraud recall": 0.2653
+   },
+   {
+    "Model": "AdaBoost Classifier",
+    "Part": "B",
+    "Accuracy": 0.755,
+    "Precision": 0.7048,
+    "Recall": 0.755,
+    "F1 (weighted)": 0.6941,
+    "ROC-AUC": 0.7666,
+    "Fraud recall": 0.1224
+   },
+   {
+    "Model": "Bagging Classifier",
+    "Part": "B",
+    "Accuracy": 0.75,
+    "Precision": 0.671,
+    "Recall": 0.75,
+    "F1 (weighted)": 0.664,
+    "ROC-AUC": 0.6947,
+    "Fraud recall": 0.0408
+   },
+   {
+    "Model": "Random Forest Classifier",
+    "Part": "B",
+    "Accuracy": 0.755,
+    "Precision": 0.57,
+    "Recall": 0.755,
+    "F1 (weighted)": 0.6496,
+    "ROC-AUC": 0.7319,
+    "Fraud recall": 0.0
+   },
+   {
+    "Model": "Support Vector Machine (SVC)",
+    "Part": "A",
+    "Accuracy": 0.755,
+    "Precision": 0.57,
+    "Recall": 0.755,
+    "F1 (weighted)": 0.6496,
+    "ROC-AUC": 0.7227,
+    "Fraud recall": 0.0
+   }
+  ]
+ },
+ "clustering": {
+  "metrics": [
+   {
+    "Algorithm": "K-Means",
+    "k": 4,
+    "Silhouette": 0.2418,
+    "Davies-Bouldin": 1.5148,
+    "Calinski-Harabasz": 2803.0259,
+    "Smallest cluster": 1598,
+    "Largest cluster": 3204
+   },
+   {
+    "Algorithm": "Agglomerative (ward)",
+    "k": 4,
+    "Silhouette": 0.1999,
+    "Davies-Bouldin": 1.7153,
+    "Calinski-Harabasz": 2370.8397,
+    "Smallest cluster": 1761,
+    "Largest cluster": 2520
+   },
+   {
+    "Algorithm": "Agglomerative (complete)",
+    "k": 4,
+    "Silhouette": 0.138,
+    "Davies-Bouldin": 1.5324,
+    "Calinski-Harabasz": 702.2048,
+    "Smallest cluster": 1,
+    "Largest cluster": 5829
+   },
+   {
+    "Algorithm": "Agglomerative (average)",
+    "k": 4,
+    "Silhouette": 0.1919,
+    "Davies-Bouldin": 1.097,
+    "Calinski-Harabasz": 188.3007,
+    "Smallest cluster": 1,
+    "Largest cluster": 8685
+   },
+   {
+    "Algorithm": "Agglomerative (single)",
+    "k": 4,
+    "Silhouette": 0.2834,
+    "Davies-Bouldin": 0.6143,
+    "Calinski-Harabasz": 4.8006,
+    "Smallest cluster": 1,
+    "Largest cluster": 8945
+   }
+  ],
+  "k_selection": [
+   {
+    "k": 2,
+    "Inertia": 121055.8435,
+    "Silhouette": 0.2859,
+    "Davies-Bouldin": 1.403,
+    "Calinski-Harabasz": 3737.6596,
+    "Smallest cluster": 3437
+   },
+   {
+    "k": 3,
+    "Inertia": 101197.6774,
+    "Silhouette": 0.2456,
+    "Davies-Bouldin": 1.5549,
+    "Calinski-Harabasz": 3113.0595,
+    "Smallest cluster": 2821
+   },
+   {
+    "k": 4,
+    "Inertia": 88464.2403,
+    "Silhouette": 0.2418,
+    "Davies-Bouldin": 1.5148,
+    "Calinski-Harabasz": 2803.0259,
+    "Smallest cluster": 1598
+   },
+   {
+    "k": 5,
+    "Inertia": 79448.2143,
+    "Silhouette": 0.2417,
+    "Davies-Bouldin": 1.4962,
+    "Calinski-Harabasz": 2594.3116,
+    "Smallest cluster": 1252
+   },
+   {
+    "k": 6,
+    "Inertia": 71895.0909,
+    "Silhouette": 0.2475,
+    "Davies-Bouldin": 1.3654,
+    "Calinski-Harabasz": 2481.1385,
+    "Smallest cluster": 975
+   },
+   {
+    "k": 7,
+    "Inertia": 68103.5368,
+    "Silhouette": 0.2426,
+    "Davies-Bouldin": 1.3514,
+    "Calinski-Harabasz": 2265.459,
+    "Smallest cluster": 742
+   },
+   {
+    "k": 8,
+    "Inertia": 63723.5722,
+    "Silhouette": 0.2443,
+    "Davies-Bouldin": 1.3338,
+    "Calinski-Harabasz": 2162.8548,
+    "Smallest cluster": 254
+   },
+   {
+    "k": 9,
+    "Inertia": 60690.1061,
+    "Silhouette": 0.201,
+    "Davies-Bouldin": 1.4519,
+    "Calinski-Harabasz": 2042.7302,
+    "Smallest cluster": 252
+   },
+   {
+    "k": 10,
+    "Inertia": 58225.1715,
+    "Silhouette": 0.1998,
+    "Davies-Bouldin": 1.5236,
+    "Calinski-Harabasz": 1934.4653,
+    "Smallest cluster": 251
+   }
+  ],
+  "segments": [
+   {
+    "Cluster": 0,
+    "Segment": "Active Transactors",
+    "Risk level": "Low",
+    "Customers": 3204,
+    "Share": 0.358,
+    "Median utilisation": 0.1306,
+    "Median payment/min ratio": 3.7234,
+    "Profile": "Frequent card purchases, low utilisation, repay well above the minimum."
+   },
+   {
+    "Cluster": 1,
+    "Segment": "Dormant / Low-Activity",
+    "Risk level": "Low",
+    "Customers": 1773,
+    "Share": 0.1981,
+    "Median utilisation": 0.0112,
+    "Median payment/min ratio": 2.1991,
+    "Profile": "Very low balances and little card usage of any kind."
+   },
+   {
+    "Cluster": 2,
+    "Segment": "Cash-Advance Revolvers",
+    "Risk level": "High",
+    "Customers": 2374,
+    "Share": 0.2653,
+    "Median utilisation": 0.6714,
+    "Median payment/min ratio": 1.0886,
+    "Profile": "Almost no purchases, rely on cash advances, high utilisation, pay close to the minimum."
+   },
+   {
+    "Cluster": 3,
+    "Segment": "Heavy Revolving Spenders",
+    "Risk level": "Medium-High",
+    "Customers": 1598,
+    "Share": 0.1786,
+    "Median utilisation": 0.5999,
+    "Median payment/min ratio": 1.4168,
+    "Profile": "High balances from both purchases and cash advances, high utilisation, pay only a little above the minimum."
+   }
+  ]
+ }
+}

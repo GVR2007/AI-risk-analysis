@@ -1,0 +1,12 @@
+# One-click deployment on Render (https://render.com) — "New > Blueprint" and pick this repository.
+services:
+  - type: web
+    name: risk-desk
+    runtime: python
+    plan: free
+    buildCommand: pip install -r app/requirements.txt
+    startCommand: gunicorn --chdir app --workers 1 --threads 4 --timeout 120 app:app
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
