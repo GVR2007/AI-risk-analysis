@@ -1,0 +1,5 @@
+Cluster,Segment,Risk level,Customers,Share,Median utilisation,Median payment/min ratio,Profile
+0,Active Transactors,Low,3204,0.35802883003687563,0.13059657434210525,3.723413712200877,"Frequent card purchases, low utilisation, repay well above the minimum."
+1,Dormant / Low-Activity,Low,1773,0.19812269527321488,0.011151524,2.1991463242572324,Very low balances and little card usage of any kind.
+2,Cash-Advance Revolvers,High,2374,0.2652810369873729,0.6714304811552796,1.0885855457854192,"Almost no purchases, rely on cash advances, high utilisation, pay close to the minimum."
+3,Heavy Revolving Spenders,Medium-High,1598,0.1785674377025366,0.59988541721875,1.416793194394807,"High balances from both purchases and cash advances, high utilisation, pay only a little above the minimum."
