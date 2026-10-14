@@ -4,8 +4,8 @@ services:
     name: risk-desk
     runtime: python
     plan: free
-    buildCommand: pip install -r app/requirements.txt
-    startCommand: gunicorn --chdir app --workers 1 --threads 4 --timeout 120 app:app
+    buildCommand: pip install -r app/requirements.txt && python app/prefetch_models.py
+    startCommand: gunicorn --chdir app --workers 1 --threads 4 --timeout 180 app:app
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION
